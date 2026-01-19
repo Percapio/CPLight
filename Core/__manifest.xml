@@ -1,0 +1,6 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+	<Include file="API.lua"/>
+	<Include file="Core.lua"/>
+	<Include file="Database.lua"/>
+	<Include file="Stubs.lua"/>
+</Ui>
