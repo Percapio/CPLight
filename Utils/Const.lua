@@ -9,6 +9,15 @@ CPAPI.IsRetailVersion     = WOW_PROJECT_ID == WOW_PROJECT_MAINLINE or nil;
 CPAPI.IsAnniVersion       = WOW_PROJECT_ID == WOW_PROJECT_BURNING_CRUSADE_CLASSIC or nil;
 
 ---------------------------------------------------------------
+-- Movement (Per STRUCTURE.md)
+---------------------------------------------------------------
+CPAPI.Movement = {
+	AngleCombat    = 180,  -- Tank Mode: Always strafe, never turn (high angle)
+	AngleTravel    = 45,   -- Travel Mode: Smooth interpolation, immediate turning
+	CameraLocked   = 2,    -- TurnWithCamera: Lock during cast/vehicle
+};
+
+---------------------------------------------------------------
 -- Button
 ---------------------------------------------------------------
 CPAPI.ExtraActionButtonID = (ExtraActionButton1 or {}).action or CPAPI.IsRetailVersion and 217 or 169;

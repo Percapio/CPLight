@@ -14,12 +14,15 @@ A high-performance, minimalist gamepad interface. It provides the "ConsolePort f
 ### 1. Movement System (`Controller/Movement.lua`)
 * **Purpose**: Translates analog stick input into character movement.
 * **Logic Modes**:
-    * **Travel Mode**: Movement follows the direction of the analog stick (360° freedom).
-    * **Tank Mode (Combat/Focus)**: Maintains forward-facing orientation; allows strafing and walking backward.
+    * **Travel Mode (Out of Combat)**: Movement follows the direction of the analog stick (360° freedom). Uses 45° strafe angle for smooth interpolation and immediate turning response.
+    * **Tank Mode (In Combat)**: Maintains forward-facing orientation; always strafes (180° angle). Character never turns with movement stick.
 * **Technical Requirements**:
+    * **Angle System**: Uses `RegisterAttributeDriver` with `[combat] 180; 45` macro to switch between modes without taint.
+        * Lower angle (45°) = character faces movement direction quickly
+        * Higher angle (180°) = character strafes, never turns
     * **Deadzone Management**: Ignores stick input below a specific threshold (e.g., 0.2) to prevent "stick drift."
     * **Camera Integration**: Manages Pitch and Yaw to ensure the character/camera follows stick direction.
-    * **Casting Guard**: Adjusts movement behavior or stops movement during active spell casts (`UNIT_SPELLCAST_START`).
+    * **Casting Guard**: Locks camera (TurnWithCamera=2) during active spell casts (`UNIT_SPELLCAST_START`) and vehicle usage.
 
 ### 2. Cursor Hijack (`View/Cursors/Hijack.lua`)
 * **Purpose**: Intercepts gamepad input when specific UI windows are open.
@@ -36,6 +39,7 @@ A high-performance, minimalist gamepad interface. It provides the "ConsolePort f
     * **Cursor API**: `CPAPI.SetCursor` maps to `C_Cursor.SetCursorPosition` (Required for 2.5.5).
     * **Mouse Focus**: `CPAPI.GetMouseFocus` maps to `GetMouseFoci()[1]` (Handles modern UI changes).
     * **Version Constants**: `CPAPI.IsAnniVersion` to toggle logic specific to the 2.5.5 client.
+    * **Movement Constants**: `CPAPI.Movement` table defines angles (Combat=180, Travel=45) and camera lock behavior for consistent project-wide usage.
 
 ### 4. State Orchestrator (`Core/State.lua`)
 * **Purpose**: Manages the "Hand-off" between the World (Movement) and the UI (Hijack).
