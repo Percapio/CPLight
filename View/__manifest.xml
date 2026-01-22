@@ -1,3 +1,4 @@
 <Ui xmlns="http://www.blizzard.com/wow/ui/">
-	<Include file="Hijack.lua"/>
+	<Script file="Actions.lua"/>
+	<Script file="Hijack.lua"/>
 </Ui>

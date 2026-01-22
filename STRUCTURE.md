@@ -32,8 +32,8 @@ A high-performance, minimalist gamepad interface. It provides the "ConsolePort f
     * **Secure Proxy**: Utilizes `SecureActionButtonTemplate` to perform `LeftButton` (PAD1) and `RightButton` (PAD2) clicks on UI nodes.
     * **Gauntlet Visual**: A 32x32 texture (`Interface\CURSOR\Point`) that follows the focused node.
     * **Navigation**: Utilizes a `ConsolePortNode`-like logic with a coordinate-distance fallback for multi-frame jumping and UI window traversal.
-    * **Tooltip**:Show tooltip only when gauntlet/pointer is hover over a node with an object in it.
-    * **Use spell/consumable**: Casts/Use spell or consumable the gauntlet/pointer is hovering over if its allowed.
+    * **Tooltip**:Show tooltip only when gauntlet is hover over a node with an object in it.
+    * **Use spell/consumable**: Cast/Use spell or consumable the gauntlet is hovering over with SetOverrideBindingClick on SecureHandlerStateTemplate that covers the entire screen.
 
 ### 3. API & Constants (`Utils/Const.lua`)
 * **Purpose**: Abstracts version-specific API changes to prevent Lua errors.

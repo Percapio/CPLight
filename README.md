@@ -25,4 +25,4 @@ Inspired by the original ConsolePort. Simplified and optimized for the 20th Anni
 This project is a **Modified Version** of **ConsolePort** addon by **MunkDev**. 
 
 **CPLight** is distributed under the **Artistic License 2.0**. 
-- Modifications by [Your Name/GitHub Handle] include the removal of configuration menus, core logic optimization for the 2.5.5 client, and a shift toward a minimalist "zero-config" architecture.
+- Modifications by Thomas Vu include the removal of configuration menus, core logic optimization for the 2.5.5 client, and a shift toward a minimalist "zero-config" architecture.

@@ -1,28 +1,127 @@
+---------------------------------------------------------------
+-- CPLight UI Navigation System
+---------------------------------------------------------------
+-- Secure state-driven UI navigation for TBC Anniversary (2.5.5)
+-- Architecture: Separates secure action handling from insecure visuals
+-- following WoW's Protected Action System requirements.
+
 local ADDON_NAME, addon = ...
 local Hijack = LibStub("AceAddon-3.0"):GetAddon("CPLight"):NewModule("Hijack", "AceEvent-3.0")
 
--- API FIX: Anniversary Client (2.5.5)
-local function SetCursor(x, y)
-    if C_Cursor and C_Cursor.SetCursorPosition then
-        C_Cursor.SetCursorPosition(x, y)
-    elseif SetCursorPosition then
-        SetCursorPosition(x, y)
-    end
-end
-
-local Driver = CreateFrame("Frame", "CPLightBindingDriver", UIParent)
-
+---------------------------------------------------------------
+-- Constants
+---------------------------------------------------------------
 local ALLOWED_FRAMES = {
-    "CharacterFrame", "SpellBookFrame", "BetterBagsBagBackpack", "TradeSkillFrame",
-    "GuildFrame", "FriendsFrame", "MSBTMainOptionsFrame", "GarrisonLandingPage",
-    "CollectionsJournal", "EncounterJournal", "PetJournalParent", "ToyBoxFrame",
-    "WardrobeFrame", "AchievementFrame", "CalendarFrame", "LFGParentFrame",
-    "LFDRoleCheckPopup", "AuctionFrame", "BankFrame", "MailFrame", "QuestLogFrame",
-    "GossipFrame", "MerchantFrame", "LootFrame", "GuildRecruitmentFrame"
+    -- Player Info
+    "CharacterFrame", "SpellBookFrame", "PlayerTalentFrame",
+    "HonorFrame", "SkillFrame", "ReputationFrame",
+    -- Social & World
+    "FriendsFrame", "GuildFrame", "WhoFrame", "WorldMapFrame", "LFGParentFrame",
+    -- Interaction
+    "GossipFrame", "QuestFrame", "MerchantFrame", "TaxiFrame",
+    "QuestLogFrame", "TradeFrame", "BankFrame", "AuctionFrame",
+    -- Inventory (Bags 0-12)
+    "ContainerFrame1", "ContainerFrame2", "ContainerFrame3", "ContainerFrame4",
+    "ContainerFrame5", "ContainerFrame6", "ContainerFrame7", "ContainerFrame8",
+    "ContainerFrame9", "ContainerFrame10", "ContainerFrame11", "ContainerFrame12",
+    "ContainerFrame13",
+    -- Management & Settings
+    "GameMenuFrame", "InterfaceOptionsFrame", "VideoOptionsFrame",
+    "AudioOptionsFrame", "KeyBindingFrame", "MacroFrame", "AddonList",
+    -- Popups/Dialogs
+    "StaticPopup1", "StaticPopup2", "StaticPopup3", "StaticPopup4", "ItemRefTooltip",
 }
 
 ---------------------------------------------------------------
--- 1. RECURSIVE SCANNER (Adopted from Navigation.lua)
+-- Secure State Driver (Main Control Frame)
+---------------------------------------------------------------
+-- This frame manages all secure state and handles combat lockdown
+local Driver = CPAPI.CreateEventHandler(
+    {'Frame', 'CPLightInputDriver', UIParent, 'SecureHandlerStateTemplate'},
+    {
+        'PLAYER_REGEN_DISABLED',  -- Enter combat
+        'PLAYER_REGEN_ENABLED',   -- Leave combat
+    },
+    {
+        Widgets = {},  -- Secure input widgets (PAD1, PAD2, D-Pad)
+        NodeCache = {},  -- Cached node references (updated out of combat)
+        CurrentIndex = 1,  -- Current focused node index
+        ButtonStates = {},  -- Track button down/up states to prevent double navigation
+    }
+)
+
+---------------------------------------------------------------
+-- State Driver Setup
+---------------------------------------------------------------
+-- Monitor combat state to disable UI navigation during combat
+RegisterStateDriver(Driver, 'combat', '[combat] true; nil')
+Driver:SetAttribute('_onstate-combat', [[
+    if newstate then
+        -- Combat started: disable all input widgets
+        control:ChildUpdate('combat', true)
+    else
+        -- Combat ended: allow navigation to re-enable
+        control:ChildUpdate('combat', nil)
+    end
+]])
+
+---------------------------------------------------------------
+-- Secure Input Widget Management (Following ConsolePort Pattern)
+---------------------------------------------------------------
+function Driver:GetWidget(id, owner)
+    id = tostring(id):upper()
+    assert(not InCombatLockdown(), 'Cannot get input widget in combat.')
+    
+    local widget = self.Widgets[id]
+    if not widget then
+        widget = CreateFrame(
+            'Button',
+            ('CPLight_Input_%s'):format(id),
+            self,
+            'SecureActionButtonTemplate, SecureHandlerBaseTemplate'
+        )
+        widget:Hide()
+        widget:SetAttribute('id', id)
+        widget:SetAttribute('owner', owner)
+        
+        -- Register for Anniversary client click behavior
+        if CPAPI.IsAnniVersion then
+            widget:RegisterForClicks('AnyUp', 'AnyDown')
+            widget:SetAttribute(CPAPI.ActionPressAndHold, true)
+        end
+        
+        -- Combat lockdown handler
+        widget:SetAttribute('_childupdate-combat', [[
+            if message then
+                self:SetAttribute('clickbutton', nil)
+                self:Hide()
+            end
+        ]])
+        
+        self.Widgets[id] = widget
+    end
+    
+    widget:SetAttribute('owner', owner)
+    return widget
+end
+
+function Driver:ReleaseWidget(id)
+    local widget = self.Widgets[id]
+    if widget then
+        widget:SetAttribute('clickbutton', nil)
+        widget:SetAttribute(CPAPI.ActionTypeRelease, nil)
+        widget:Hide()
+    end
+end
+
+function Driver:ReleaseAll()
+    for id, widget in pairs(self.Widgets) do
+        self:ReleaseWidget(id)
+    end
+end
+
+---------------------------------------------------------------
+-- Node Scanning (Insecure - Runs Out of Combat Only)
 ---------------------------------------------------------------
 function Hijack:ScanForButtons(frame)
     local candidates = {}
@@ -32,7 +131,7 @@ function Hijack:ScanForButtons(frame)
             if child:IsVisible() and child:IsObjectType("Button") and child:IsEnabled() then
                 table.insert(candidates, child)
             end
-            Collect(child) -- Search deeper
+            Collect(child)  -- Recursive scan
         end
     end
     Collect(frame)
@@ -54,160 +153,147 @@ function Hijack:GetActiveNodes()
 end
 
 ---------------------------------------------------------------
--- 2. NAVIGATION LOGIC (Merged Cone Logic)
+-- Navigation Logic (Insecure - Will be converted to secure snippets in later phases)
 ---------------------------------------------------------------
 function Hijack:Navigate(direction)
-    if not self.CurrentNode then return end
+    if not self.CurrentNode or InCombatLockdown() then return end
     
+    -- Rescan nodes to handle dynamic UI changes
     local nodes = self:GetActiveNodes()
+    Driver.NodeCache = nodes
+    
+    if #nodes == 0 then return end
+    
     local cx, cy = self.CurrentNode:GetCenter()
+    if not cx or not cy then return end
+    
     local bestNode, bestScore = nil, math.huge
+    local fallbackNode, fallbackScore = nil, math.huge
     
     local vectors = {
-        UP    = {x = 0, y = 1},  DOWN  = {x = 0, y = -1},
-        LEFT  = {x = -1, y = 0}, RIGHT = {x = 1, y = 0}
+        UP    = {x = 0, y = 1},
+        DOWN  = {x = 0, y = -1},
+        LEFT  = {x = -1, y = 0},
+        RIGHT = {x = 1, y = 0}
     }
     local v = vectors[direction]
 
     for _, node in ipairs(nodes) do
-        if node ~= self.CurrentNode then
+        if node ~= self.CurrentNode and node:IsVisible() then
             local nx, ny = node:GetCenter()
-            if nx then
+            if nx and ny then
                 local dx, dy = nx - cx, ny - cy
                 local dot = (dx * v.x) + (dy * v.y)
+                local distSq = (dx*dx) + (dy*dy)
                 
-                if dot > 0 then -- Node is in the right general direction
-                    -- Cone check: Is it more in this direction than the other?
-                    local inCone = (v.x ~= 0 and math.abs(dx) >= math.abs(dy)) or 
-                                   (v.y ~= 0 and math.abs(dy) >= math.abs(dx))
+                if dot > 0 then
+                    -- Primary: Cone check with relaxed threshold (45° cone)
+                    -- This allows better diagonal and multi-frame traversal
+                    local horzDist = math.abs(dx)
+                    local vertDist = math.abs(dy)
+                    local inCone = false
+                    
+                    if v.x ~= 0 then  -- LEFT or RIGHT
+                        inCone = horzDist >= vertDist * 0.5  -- Allow 26° deviation
+                    else  -- UP or DOWN
+                        inCone = vertDist >= horzDist * 0.5
+                    end
                     
                     if inCone then
-                        local distSq = (dx*dx) + (dy*dy)
                         if distSq < bestScore then
                             bestScore = distSq
                             bestNode = node
                         end
+                    end
+                    
+                    -- Fallback: Any node in general direction (for multi-frame jumps)
+                    if distSq < fallbackScore then
+                        fallbackScore = distSq
+                        fallbackNode = node
                     end
                 end
             end
         end
     end
     
-    if bestNode then self:SetFocus(bestNode) end
+    -- Use best match, or fallback if no cone match found
+    local targetNode = bestNode or fallbackNode
+    if targetNode then
+        self:SetFocus(targetNode)
+    end
 end
 
 ---------------------------------------------------------------
--- 3. CORE SYSTEMS (Hijack Structure)
+-- Focus Management (Insecure - Updates visuals and prepares secure click)
 ---------------------------------------------------------------
-function Hijack:OnEnable()
-    self:CreateGauntlet()
-    self:CreateSecureButton()
-    
-    Driver:SetScript("OnUpdate", function(f, elapsed)
-        f.timer = (f.timer or 0) + elapsed
-        if f.timer > 0.1 then
-            f.timer = 0
-            local visible = false
-            for _, name in ipairs(ALLOWED_FRAMES) do
-                local frame = _G[name]
-                if frame and frame:IsVisible() and frame:GetAlpha() > 0 then 
-                    visible = true; break 
-                end
-            end
-            
-            if visible and not self.IsActive then self:EnableNavigation()
-            elseif not visible and self.IsActive then self:DisableNavigation() end
-        end
-    end)
-end
-
-function Hijack:EnableNavigation()
-    if InCombatLockdown() then return end
-    
-    local nodes = self:GetActiveNodes()
-    if #nodes == 0 then return end
-    self.IsActive = true
-    
-    ClearOverrideBindings(Driver)
-    SetOverrideBindingClick(Driver, true, "PAD1", "CPLightSecureClick", "LeftButton")
-    SetOverrideBindingClick(Driver, true, "PAD2", "CPLightSecureClick", "RightButton")
-    SetOverrideBindingClick(Driver, true, "PADDUP", "CPLightSecureClick", "UP")
-    SetOverrideBindingClick(Driver, true, "PADDDOWN", "CPLightSecureClick", "DOWN")
-    SetOverrideBindingClick(Driver, true, "PADDLEFT", "CPLightSecureClick", "LEFT")
-    SetOverrideBindingClick(Driver, true, "PADDRIGHT", "CPLightSecureClick", "RIGHT")
-    
-    self:SetFocus(nodes[1])
-end
-
-function Hijack:DisableNavigation()
-    if InCombatLockdown() then return end
-    
-    self.IsActive = false
-    ClearOverrideBindings(Driver)
-    
-    -- Clear secure button target
-    if self.ClickButton then
-        self.ClickButton:SetAttribute("clickbutton", nil)
-    end
-    
-    -- Hide tooltip
-    if GameTooltip:GetOwner() == self.CurrentNode then
-        GameTooltip:Hide()
-    end
-    
-    if self.Gauntlet then self.Gauntlet:Hide() end
-    self.CurrentNode = nil
-end
-
 function Hijack:SetFocus(node)
-    if not node then return end
+    if not node or InCombatLockdown() then return end
+    
     self.CurrentNode = node
     
-    -- Set secure clickbutton BEFORE any other interactions
-    if not InCombatLockdown() and self.ClickButton then
-        self.ClickButton:SetAttribute("clickbutton", node)
+    -- Update secure widget to target this node
+    local clickWidget = Driver:GetWidget('PAD1', 'Hijack')
+    if clickWidget then
+        clickWidget:SetAttribute(CPAPI.ActionTypeRelease, 'click')
+        clickWidget:SetAttribute('clickbutton', node)
+        clickWidget:Show()
     end
     
-    -- Explicitly trigger tooltip
+    -- Also update PAD2 for right-click
+    local rightWidget = Driver:GetWidget('PAD2', 'Hijack')
+    if rightWidget then
+        rightWidget:SetAttribute(CPAPI.ActionTypeRelease, 'click')
+        rightWidget:SetAttribute('clickbutton', node)
+        rightWidget:Show()
+    end
+    
+    -- Update gauntlet visual
+    self:UpdateGauntletPosition(node)
+    
+    -- Show tooltip
+    self:ShowNodeTooltip(node)
+end
+
+function Hijack:ShowNodeTooltip(node)
+    if not node then return end
+    
     if node:HasScript("OnEnter") then
         local onEnterScript = node:GetScript("OnEnter")
         if onEnterScript then
-            onEnterScript(node)
-        else
-            -- Fallback: Manually show tooltip
-            if node:GetName() then
-                GameTooltip:SetOwner(node, "ANCHOR_RIGHT")
-                GameTooltip:SetText(node:GetName())
-                GameTooltip:Show()
-            end
+            pcall(onEnterScript, node)
         end
-    end
-    
-    -- Move gauntlet to node center
-    if self.Gauntlet then
-        self.Gauntlet:ClearAllPoints()
-        self.Gauntlet:SetPoint("CENTER", node, "CENTER", 0, 0)
-        self.Gauntlet:Show()
+    elseif node:GetName() then
+        GameTooltip:SetOwner(node, "ANCHOR_RIGHT")
+        GameTooltip:SetText(node:GetName())
+        GameTooltip:Show()
     end
 end
 
 ---------------------------------------------------------------
--- 4. VISUAL GAUNTLET
+-- Visual Gauntlet (Insecure - Cosmetic Only)
 ---------------------------------------------------------------
 function Hijack:CreateGauntlet()
-    self.Gauntlet = CreateFrame("Frame", "CPLightGauntlet", UIParent)
-    self.Gauntlet:SetFrameStrata("TOOLTIP")
-    self.Gauntlet:SetFrameLevel(200)
-    self.Gauntlet:SetSize(32, 32)
+    local gauntlet = CreateFrame("Frame", "CPLightGauntlet", UIParent)
+    gauntlet:SetFrameStrata("TOOLTIP")
+    gauntlet:SetFrameLevel(200)
+    gauntlet:SetSize(32, 32)
+    gauntlet:Hide()
     
-    local tex = self.Gauntlet:CreateTexture(nil, "OVERLAY")
+    local tex = gauntlet:CreateTexture(nil, "OVERLAY")
     tex:SetAllPoints()
     tex:SetTexture("Interface\\CURSOR\\Point")
-    self.Gauntlet.tex = tex
+    gauntlet.tex = tex
     
-    self.Gauntlet.defaultSize = 32
-    self.Gauntlet.pressedSize = 38
-    self.Gauntlet:Hide()
+    self.Gauntlet = gauntlet
+end
+
+function Hijack:UpdateGauntletPosition(node)
+    if not self.Gauntlet or not node then return end
+    
+    self.Gauntlet:ClearAllPoints()
+    -- Offset to center the pointer finger (top-left of texture) on the node center
+    self.Gauntlet:SetPoint("CENTER", node, "CENTER", -8, 8)
+    self.Gauntlet:Show()
 end
 
 function Hijack:SetGauntletPressed(pressed)
@@ -215,60 +301,179 @@ function Hijack:SetGauntletPressed(pressed)
     
     if pressed then
         self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Interact")
-        self.Gauntlet:SetSize(self.Gauntlet.pressedSize, self.Gauntlet.pressedSize)
+        self.Gauntlet:SetSize(38, 38)
     else
         self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Point")
-        self.Gauntlet:SetSize(self.Gauntlet.defaultSize, self.Gauntlet.defaultSize)
+        self.Gauntlet:SetSize(32, 32)
     end
 end
 
 ---------------------------------------------------------------
--- 5. SECURE BUTTON (Proxy Click + Navigation)
+-- Binding Management (Runs in OnUpdate to detect UI state changes)
 ---------------------------------------------------------------
-function Hijack:CreateSecureButton()
-    local btn = CreateFrame("Button", "CPLightSecureClick", UIParent, "SecureActionButtonTemplate")
-    self.ClickButton = btn
+local VisibilityChecker = CreateFrame("Frame")
+VisibilityChecker.timer = 0
+VisibilityChecker:SetScript("OnUpdate", function(self, elapsed)
+    self.timer = self.timer + elapsed
+    if self.timer < 0.1 then return end
+    self.timer = 0
     
-    btn:RegisterForClicks("AnyUp")
-    btn:SetSize(1, 1)
-    btn:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 0, 0)
-    btn:SetAlpha(0)
-    btn:Show()
+    -- Check if any allowed frames are visible
+    local visible = false
+    for _, frameName in ipairs(ALLOWED_FRAMES) do
+        local frame = _G[frameName]
+        if frame and frame:IsVisible() and frame:GetAlpha() > 0 then
+            visible = true
+            break
+        end
+    end
     
-    -- PreClick: Move cursor to gauntlet position
-    btn:SetScript("PreClick", function(self, button)
-        if button == "LeftButton" or button == "RightButton" then
-            if Hijack.Gauntlet and Hijack.Gauntlet:IsVisible() and Hijack.CurrentNode then
-                local x, y = Hijack.Gauntlet:GetCenter()
-                if x and y then
-                    -- Anniversary client requires screen coordinates (not scaled UI coordinates)
-                    local scale = UIParent:GetEffectiveScale()
-                    local screenX = x * scale
-                    local screenY = y * scale
-                    SetCursor(screenX, screenY)
-                end
-                Hijack:SetGauntletPressed(true)
+    -- Enable/disable navigation based on visibility
+    if visible and not Hijack.IsActive then
+        Hijack:EnableNavigation()
+    elseif not visible and Hijack.IsActive then
+        Hijack:DisableNavigation()
+    elseif visible and Hijack.IsActive then
+        -- UI is still open: check if current node is still valid
+        if Hijack.CurrentNode and not Hijack.CurrentNode:IsVisible() then
+            -- Current frame closed, refocus on nearest available node
+            local nodes = Hijack:GetActiveNodes()
+            if #nodes > 0 then
+                Driver.NodeCache = nodes
+                Hijack:SetFocus(nodes[1])
+            else
+                Hijack:DisableNavigation()
             end
         end
+    end
+end)
+
+function Hijack:EnableNavigation()
+    if InCombatLockdown() or self.IsActive then return end
+    
+    -- Scan for nodes
+    local nodes = self:GetActiveNodes()
+    if #nodes == 0 then return end
+    
+    Driver.NodeCache = nodes
+    Driver.CurrentIndex = 1
+    self.IsActive = true
+    
+    -- Set up secure input widgets with override bindings
+    local padWidget = Driver:GetWidget('PAD1', 'Hijack')
+    SetOverrideBindingClick(padWidget, true, 'PAD1', padWidget:GetName(), 'LeftButton')
+    
+    local pad2Widget = Driver:GetWidget('PAD2', 'Hijack')
+    SetOverrideBindingClick(pad2Widget, true, 'PAD2', pad2Widget:GetName(), 'RightButton')
+    
+    -- D-Pad navigation widgets (will trigger insecure navigation for now)
+    local upWidget = Driver:GetWidget('PADDUP', 'Hijack')
+    SetOverrideBindingClick(upWidget, true, 'PADDUP', upWidget:GetName(), 'LeftButton')
+    
+    local downWidget = Driver:GetWidget('PADDDOWN', 'Hijack')
+    SetOverrideBindingClick(downWidget, true, 'PADDDOWN', downWidget:GetName(), 'LeftButton')
+    
+    local leftWidget = Driver:GetWidget('PADDLEFT', 'Hijack')
+    SetOverrideBindingClick(leftWidget, true, 'PADDLEFT', leftWidget:GetName(), 'LeftButton')
+    
+    local rightWidget = Driver:GetWidget('PADDRIGHT', 'Hijack')
+    SetOverrideBindingClick(rightWidget, true, 'PADDRIGHT', rightWidget:GetName(), 'LeftButton')
+    
+    -- Set up PreClick handlers for D-Pad navigation (temporary insecure solution)
+    -- PreClick only fires on button DOWN, preventing double navigation on press+release
+    upWidget:SetScript('PreClick', function(self, button, down)
+        if down then Hijack:Navigate('UP') end
+    end)
+    downWidget:SetScript('PreClick', function(self, button, down)
+        if down then Hijack:Navigate('DOWN') end
+    end)
+    leftWidget:SetScript('PreClick', function(self, button, down)
+        if down then Hijack:Navigate('LEFT') end
+    end)
+    rightWidget:SetScript('PreClick', function(self, button, down)
+        if down then Hijack:Navigate('RIGHT') end
     end)
     
-    btn:SetScript("PostClick", function(self, button)
-        if button == "LeftButton" or button == "RightButton" then
-            Hijack:SetGauntletPressed(false)
-        end
+    -- Set up visual feedback handlers for PAD1/PAD2 (only on down press)
+    padWidget:SetScript('PreClick', function(self, button, down)
+        if down then Hijack:SetGauntletPressed(true) end
+    end)
+    padWidget:SetScript('PostClick', function(self, button, down)
+        Hijack:SetGauntletPressed(false)
+    end)
+    pad2Widget:SetScript('PreClick', function(self, button, down)
+        if down then Hijack:SetGauntletPressed(true) end
+    end)
+    pad2Widget:SetScript('PostClick', function(self, button, down)
+        Hijack:SetGauntletPressed(false)
     end)
     
-    -- Handle D-Pad navigation via button parameter
-    local hijackModule = self
-    btn:SetScript("OnClick", function(secureBtn, button)
-        if button == "UP" then
-            hijackModule:Navigate("UP")
-        elseif button == "DOWN" then
-            hijackModule:Navigate("DOWN")
-        elseif button == "LEFT" then
-            hijackModule:Navigate("LEFT")
-        elseif button == "RIGHT" then
-            hijackModule:Navigate("RIGHT")
+    -- Focus first node
+    self:SetFocus(nodes[1])
+    
+    CPAPI.Log('UI Navigation Enabled (%d nodes)', #nodes)
+end
+
+function Hijack:DisableNavigation()
+    if InCombatLockdown() or not self.IsActive then return end
+    
+    self.IsActive = false
+    
+    -- Release all input widgets
+    Driver:ReleaseAll()
+    
+    -- Clear bindings
+    for id in pairs(Driver.Widgets) do
+        local widget = Driver.Widgets[id]
+        if widget then
+            ClearOverrideBindings(widget)
         end
-    end)
+    end
+    
+    -- Hide gauntlet
+    if self.Gauntlet then
+        self.Gauntlet:Hide()
+    end
+    
+    -- Hide tooltip (improved cleanup)
+    if GameTooltip:IsShown() then
+        if not self.CurrentNode or GameTooltip:GetOwner() == self.CurrentNode or GameTooltip:IsOwned(UIParent) then
+            GameTooltip:Hide()
+        end
+    end
+    
+    -- Clear state
+    Driver.NodeCache = {}
+    Driver.CurrentIndex = 1
+    self.CurrentNode = nil
+    
+    CPAPI.Log('UI Navigation Disabled')
+end
+
+---------------------------------------------------------------
+-- Combat Protection
+---------------------------------------------------------------
+function Driver:PLAYER_REGEN_DISABLED()
+    -- Entering combat: disable navigation
+    if Hijack.IsActive then
+        Hijack:DisableNavigation()
+    end
+end
+
+function Driver:PLAYER_REGEN_ENABLED()
+    -- Leaving combat: navigation will re-enable via visibility checker if UI is open
+end
+
+---------------------------------------------------------------
+-- Module Initialization
+---------------------------------------------------------------
+function Hijack:OnEnable()
+    self:CreateGauntlet()
+    VisibilityChecker:Show()
+    CPAPI.Log('Hijack System Initialized (Secure State Driver Architecture)')
+end
+
+function Hijack:OnDisable()
+    self:DisableNavigation()
+    VisibilityChecker:Hide()
 end
