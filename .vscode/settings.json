@@ -1,0 +1,31 @@
+{
+    "Lua.runtime.version": "Lua 5.1",
+    "Lua.runtime.builtin": {
+        "basic": "enable", 
+        "math": "enable",
+        "string": "enable",
+        "table": "enable",
+        "debug": "disable",
+        "io": "disable",
+        "os": "disable"
+    },
+    "Lua.workspace.library": [
+        "~\\.vscode\\extensions\\ketho.wow-api-0.21.0\\Annotations\\Core"
+    ],
+    "Lua.type.weakUnionCheck": true,
+    "Lua.diagnostics.globals": [
+        "CPLight",
+        "db",
+        "CPAPI",
+        "UIParent",
+        "_G",
+        "SecureHandlerStateTemplate",
+        "Vector2D_GetLength",
+        "CreateTexturePool"
+    ],
+    "Lua.diagnostics.globals": [
+        "CPLight", "db", "CPAPI", "UIParent", "_G", "SecureHandlerStateTemplate"
+    ],
+    "editor.guides.bracketPairs": true,
+    "editor.semanticHighlighting.enabled": true
+}

@@ -7,6 +7,7 @@
 
 local ADDON_NAME, addon = ...
 local Hijack = LibStub("AceAddon-3.0"):GetAddon("CPLight"):NewModule("Hijack", "AceEvent-3.0")
+local NODE = LibStub('ConsolePortNode')
 
 ---------------------------------------------------------------
 -- Constants
@@ -123,33 +124,28 @@ end
 ---------------------------------------------------------------
 -- Node Scanning (Insecure - Runs Out of Combat Only)
 ---------------------------------------------------------------
-function Hijack:ScanForButtons(frame)
-    local candidates = {}
-    local function Collect(current)
-        if not current or not current.GetChildren then return end
-        for _, child in ipairs({current:GetChildren()}) do
-            if child:IsVisible() and child:IsObjectType("Button") and child:IsEnabled() then
-                table.insert(candidates, child)
-            end
-            Collect(child)  -- Recursive scan
-        end
-    end
-    Collect(frame)
-    return candidates
-end
-
+-- Uses ConsolePortNode library's superior recursive scanner
 function Hijack:GetActiveNodes()
-    local allNodes = {}
+    local activeFrames = {}
     for _, frameName in ipairs(ALLOWED_FRAMES) do
         local frame = _G[frameName]
         if frame and frame:IsVisible() and frame:GetAlpha() > 0 then
-            local nodes = self:ScanForButtons(frame)
-            for _, node in ipairs(nodes) do
-                table.insert(allNodes, node)
-            end
+            table.insert(activeFrames, frame)
         end
     end
-    return allNodes
+    
+    -- NODE(unpack(activeFrames)) scans all frames recursively and returns cached nodes
+    if #activeFrames > 0 then
+        local cache = NODE(unpack(activeFrames))
+        local nodes = {}
+        -- Extract node references from cache
+        for _, cacheItem in ipairs(cache) do
+            table.insert(nodes, cacheItem.node)
+        end
+        return nodes
+    end
+    
+    return {}
 end
 
 ---------------------------------------------------------------
@@ -158,68 +154,42 @@ end
 function Hijack:Navigate(direction)
     if not self.CurrentNode or InCombatLockdown() then return end
     
-    -- Rescan nodes to handle dynamic UI changes
-    local nodes = self:GetActiveNodes()
-    Driver.NodeCache = nodes
-    
-    if #nodes == 0 then return end
-    
-    local cx, cy = self.CurrentNode:GetCenter()
-    if not cx or not cy then return end
-    
-    local bestNode, bestScore = nil, math.huge
-    local fallbackNode, fallbackScore = nil, math.huge
-    
-    local vectors = {
-        UP    = {x = 0, y = 1},
-        DOWN  = {x = 0, y = -1},
-        LEFT  = {x = -1, y = 0},
-        RIGHT = {x = 1, y = 0}
-    }
-    local v = vectors[direction]
-
-    for _, node in ipairs(nodes) do
-        if node ~= self.CurrentNode and node:IsVisible() then
-            local nx, ny = node:GetCenter()
-            if nx and ny then
-                local dx, dy = nx - cx, ny - cy
-                local dot = (dx * v.x) + (dy * v.y)
-                local distSq = (dx*dx) + (dy*dy)
-                
-                if dot > 0 then
-                    -- Primary: Cone check with relaxed threshold (45° cone)
-                    -- This allows better diagonal and multi-frame traversal
-                    local horzDist = math.abs(dx)
-                    local vertDist = math.abs(dy)
-                    local inCone = false
-                    
-                    if v.x ~= 0 then  -- LEFT or RIGHT
-                        inCone = horzDist >= vertDist * 0.5  -- Allow 26° deviation
-                    else  -- UP or DOWN
-                        inCone = vertDist >= horzDist * 0.5
-                    end
-                    
-                    if inCone then
-                        if distSq < bestScore then
-                            bestScore = distSq
-                            bestNode = node
-                        end
-                    end
-                    
-                    -- Fallback: Any node in general direction (for multi-frame jumps)
-                    if distSq < fallbackScore then
-                        fallbackScore = distSq
-                        fallbackNode = node
-                    end
-                end
-            end
+    -- Rescan nodes to handle dynamic UI changes and rebuild NODE cache
+    local activeFrames = {}
+    for _, frameName in ipairs(ALLOWED_FRAMES) do
+        local frame = _G[frameName]
+        if frame and frame:IsVisible() and frame:GetAlpha() > 0 then
+            table.insert(activeFrames, frame)
         end
     end
     
-    -- Use best match, or fallback if no cone match found
-    local targetNode = bestNode or fallbackNode
-    if targetNode then
-        self:SetFocus(targetNode)
+    if #activeFrames == 0 then return end
+    
+    -- Rebuild NODE cache with current UI state
+    local cache = NODE(unpack(activeFrames))
+    
+    if #cache == 0 then return end
+    
+    -- Find current node in cache
+    local currentCacheItem = nil
+    for _, cacheItem in ipairs(cache) do
+        if cacheItem.node == self.CurrentNode then
+            currentCacheItem = cacheItem
+            break
+        end
+    end
+    
+    -- If current node not in cache, use first node
+    if not currentCacheItem then
+        self:SetFocus(cache[1].node)
+        return
+    end
+    
+    -- Use NODE library's superior navigation algorithm
+    local targetCacheItem = NODE.NavigateToBestCandidateV3(currentCacheItem, direction)
+    
+    if targetCacheItem and targetCacheItem.node ~= self.CurrentNode then
+        self:SetFocus(targetCacheItem.node)
     end
 end
 
@@ -290,9 +260,13 @@ end
 function Hijack:UpdateGauntletPosition(node)
     if not self.Gauntlet or not node then return end
     
+    local x, y = NODE.GetCenterScaled(node)
+    if not x or not y then return end
+    
     self.Gauntlet:ClearAllPoints()
+    -- Position using scaled coordinates from NODE library
     -- Offset to center the pointer finger (top-left of texture) on the node center
-    self.Gauntlet:SetPoint("CENTER", node, "CENTER", -8, 8)
+    self.Gauntlet:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x - 8, y + 8)
     self.Gauntlet:Show()
 end
 
@@ -351,10 +325,11 @@ end)
 function Hijack:EnableNavigation()
     if InCombatLockdown() or self.IsActive then return end
     
-    -- Scan for nodes
+    -- Scan for nodes using NODE library
     local nodes = self:GetActiveNodes()
     if #nodes == 0 then return end
     
+    -- Store both nodes and cache for navigation
     Driver.NodeCache = nodes
     Driver.CurrentIndex = 1
     self.IsActive = true
