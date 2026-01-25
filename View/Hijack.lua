@@ -26,6 +26,7 @@ Hijack.LastGraphState = {
 Hijack.RebuildState = {
     pending = false,       -- Is a rebuild currently pending?
     hooksRegistered = false,  -- Have OnShow/OnHide hooks been set up?
+    timerGeneration = 0,   -- Timer generation counter for stale callback detection
 }
 
 ---------------------------------------------------------------
@@ -51,6 +52,19 @@ local ALLOWED_FRAMES = {
     -- Popups/Dialogs
     "StaticPopup1", "StaticPopup2", "StaticPopup3", "StaticPopup4", "ItemRefTooltip",
 }
+
+---------------------------------------------------------------
+-- Late-Loaded Blizzard Addon Frames
+---------------------------------------------------------------
+-- These frames don't exist until their parent addon loads
+local LATE_LOADED_FRAMES = {
+    ["Blizzard_TalentUI"] = {"PlayerTalentFrame"},
+    ["Blizzard_MacroUI"] = {"MacroFrame"},
+    ["Blizzard_AuctionUI"] = {"AuctionFrame"},
+    ["Blizzard_InspectUI"] = {"InspectFrame"},
+}
+
+local lateLoadedAddons = {}
 
 ---------------------------------------------------------------
 -- Secure State Driver (Main Control Frame)
@@ -280,6 +294,8 @@ end
 ---@return boolean success True if widgets were configured successfully
 ---@private
 function Hijack:_ConfigureWidgetsForNode(node)
+    assert(not InCombatLockdown(), 'Cannot configure widgets during combat')
+
     local widgetsConfigured = 0
     
     -- Update PAD1 (primary action) widget
@@ -434,20 +450,29 @@ local function RequestGraphRebuild()
         return
     end
     
-    -- Mark rebuild as pending
+    -- Mark rebuild as pending and increment timer generation
     Hijack.RebuildState.pending = true
-    CPAPI.Log('RequestGraphRebuild: rebuild scheduled (100ms debounce)')
+    Hijack.RebuildState.timerGeneration = Hijack.RebuildState.timerGeneration + 1
+    local generation = Hijack.RebuildState.timerGeneration
+    CPAPI.Log('RequestGraphRebuild: rebuild scheduled (100ms debounce, generation %d)', generation)
     
     -- Debounce: wait 100ms to let multiple frame changes settle
     C_Timer.After(0.1, function()
-        -- Clear pending flag first
-        Hijack.RebuildState.pending = false
+        -- Check if this is a stale timer callback
+        if generation ~= Hijack.RebuildState.timerGeneration then
+            CPAPI.Log('RequestGraphRebuild: ignoring stale timer callback (generation %d, current %d)', generation, Hijack.RebuildState.timerGeneration)
+            return
+        end
         
         -- Re-check combat status (might have entered combat during delay)
         if InCombatLockdown() then
             CPAPI.Log('RequestGraphRebuild: aborting, entered combat during debounce')
+            Hijack.RebuildState.pending = false
             return
         end
+
+        -- Clear pending flag
+        Hijack.RebuildState.pending = false
         
         -- Check if any frames are visible
         local activeFrames, frameNames = Hijack:_CollectVisibleFrames()
@@ -516,13 +541,59 @@ function Hijack:_RegisterVisibilityHooks()
     CPAPI.Log('_RegisterVisibilityHooks: registered hooks for %d frames', hooksRegistered)
 end
 
+---Register hooks for frames from late-loaded Blizzard addons
+---@private
+function Hijack:_RegisterLateLoadedFrameHooks()
+    CPAPI.Log('_RegisterLateLoadedFrameHooks: registering ADDON_LOADED event listener')
+    
+    self:RegisterEvent('ADDON_LOADED', function(event, addonName)
+        local frames = LATE_LOADED_FRAMES[addonName]
+        if not frames then return end
+        
+        CPAPI.Log('ADDON_LOADED: %s detected, hooking frames', addonName)
+        
+        for _, frameName in ipairs(frames) do
+            local frame = _G[frameName]
+            if frame then
+                frame:HookScript('OnShow', function()
+                    if not InCombatLockdown() then
+                        CPAPI.Log('Frame OnShow: %s', frameName)
+                        RequestGraphRebuild()
+                    end
+                end)
+                
+                frame:HookScript('OnHide', function()
+                    if not InCombatLockdown() then
+                        CPAPI.Log('Frame OnHide: %s', frameName)
+                        RequestGraphRebuild()
+                    end
+                end)
+                
+                CPAPI.Log('  ✓ Hooked frame: %s', frameName)
+            else
+                CPAPI.Log('  ⚠ Frame %s not found after %s loaded', frameName, addonName)
+            end
+        end
+        
+        lateLoadedAddons[addonName] = true
+        
+        -- Performance optimization: unregister event once all frames hooked
+        if lateLoadedAddons["Blizzard_TalentUI"] and 
+           lateLoadedAddons["Blizzard_MacroUI"] and 
+           lateLoadedAddons["Blizzard_AuctionUI"] and 
+           lateLoadedAddons["Blizzard_InspectUI"] then
+            self:UnregisterEvent('ADDON_LOADED')
+            CPAPI.Log('_RegisterLateLoadedFrameHooks: all late-loaded frames hooked, unregistering event')
+        end
+    end)
+end
+
 ---Register game events for dynamic content changes
 ---@private
 function Hijack:_RegisterGameEvents()
     -- BAG_UPDATE fires when bag contents change (items added/removed)
     self:RegisterEvent('BAG_UPDATE', function()
-        if not InCombatLockdown() and self.IsActive then
-            CPAPI.Log('BAG_UPDATE: requesting graph rebuild for dynamic content')
+        if not InCombatLockdown() and Hijack.IsActive and NavGraph then
             RequestGraphRebuild()
         end
     end)
@@ -706,6 +777,8 @@ end
 ---@return table|nil widgets Table of configured widgets, or nil on failure
 ---@private
 function Hijack:_SetupSecureWidgets()
+    assert(not InCombatLockdown(), 'Cannot setup widgets during combat')
+
     local widgets = {}
     local widgetCount = 0
     
@@ -973,6 +1046,7 @@ function Hijack:OnEnable()
     
     -- Register event-driven visibility detection
     self:_RegisterVisibilityHooks()
+    self:_RegisterLateLoadedFrameHooks()
     self:_RegisterGameEvents()
     
     -- Check if any frames are already open
@@ -981,10 +1055,11 @@ function Hijack:OnEnable()
     -- Start fallback polling (safety net)
     VisibilityChecker:Show()
     
-    CPAPI.Log('Hijack System Initialized (Event-Driven Architecture with 1s Fallback Polling)')
+    CPAPI.Log('Hijack System Initialized (Event-Driven Architecture with Late-Load Support)')
 end
 
 function Hijack:OnDisable()
     self:DisableNavigation()
     VisibilityChecker:Hide()
+    self.RebuildState.hooksRegistered = false
 end
