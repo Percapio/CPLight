@@ -42,9 +42,11 @@ Hijack.RebuildState = {
 }
 
 ---------------------------------------------------------------
--- Constants
+-- Frame Registry (Single Source of Truth)
 ---------------------------------------------------------------
-local ALLOWED_FRAMES = {
+-- Consolidated list of all navigable frames
+-- Hooks are registered lazily when frames first appear (eliminates race conditions)
+local FRAMES = {
     -- Player Info
     "CharacterFrame", "SpellBookFrame", "PlayerTalentFrame",
     "HonorFrame", "SkillFrame", "ReputationFrame",
@@ -52,7 +54,7 @@ local ALLOWED_FRAMES = {
     "FriendsFrame", "GuildFrame", "WhoFrame", "WorldMapFrame", "LFGParentFrame",
     -- Interaction
     "GossipFrame", "QuestFrame", "MerchantFrame", "TaxiFrame",
-    "QuestLogFrame", "TradeFrame", "BankFrame", "AuctionFrame",
+    "QuestLogFrame", "TradeFrame", "BankFrame", "AuctionFrame", "MailFrame",
     -- Inventory (Bags 0-12)
     "ContainerFrame1", "ContainerFrame2", "ContainerFrame3", "ContainerFrame4",
     "ContainerFrame5", "ContainerFrame6", "ContainerFrame7", "ContainerFrame8",
@@ -63,20 +65,9 @@ local ALLOWED_FRAMES = {
     "AudioOptionsFrame", "KeyBindingFrame", "MacroFrame", "AddonList",
     -- Popups/Dialogs
     "StaticPopup1", "StaticPopup2", "StaticPopup3", "StaticPopup4", "ItemRefTooltip",
+    -- Late-Loaded Addon Frames (hooked lazily when they first appear)
+    "TradeSkillFrame", "InspectFrame",
 }
-
----------------------------------------------------------------
--- Late-Loaded Blizzard Addon Frames
----------------------------------------------------------------
--- These frames don't exist until their parent addon loads
-local LATE_LOADED_FRAMES = {
-    ["Blizzard_TalentUI"] = {"PlayerTalentFrame"},
-    ["Blizzard_MacroUI"] = {"MacroFrame"},
-    ["Blizzard_AuctionUI"] = {"AuctionFrame"},
-    ["Blizzard_InspectUI"] = {"InspectFrame"},
-}
-
-local lateLoadedAddons = {}
 
 ---------------------------------------------------------------
 -- Secure State Driver (Main Control Frame)
@@ -203,37 +194,62 @@ function Hijack:_ValidateNavigationState()
 end
 
 ---Get and validate the target node in the specified direction
+---Uses validated edges with NODE fallback for dynamic accuracy
 ---@param currentIndex number The current node index
 ---@param direction string The direction to navigate ("UP", "DOWN", "LEFT", "RIGHT")
 ---@return number|nil targetIndex The target node index, or nil if not found/invalid
 ---@private
 function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
-    -- Get neighbor index from pre-calculated edges
-    local edges = NavGraph:GetNodeEdges(currentIndex)
-    if not edges then
-        return nil
-    end
-    
-    local dirKey = direction:lower()
-    local targetIndex = edges[dirKey]
-    
-    if not targetIndex then
-        return nil
-    end
-    
-    -- Get target node and validate it's still visible
-    local targetNode = NavGraph:IndexToNode(targetIndex)
-    if not targetNode then
-        NavGraph:InvalidateGraph()
-        return nil
-    end
-    
-    if not targetNode:IsVisible() then
-        NavGraph:InvalidateGraph()
-        return nil
-    end
-    
-    return targetIndex
+	-- Get neighbor index from pre-calculated edges with real-time validation
+	local edges = NavGraph:GetValidatedNodeEdges(currentIndex)
+	if not edges then
+		return nil
+	end
+	
+	local dirKey = direction:lower()
+	local targetIndex = edges[dirKey]
+	
+	if targetIndex then
+		-- Found valid pre-calculated edge
+		return targetIndex
+	end
+	
+	-- FALLBACK: Pre-calculated edge is invalid, try NODE real-time navigation
+	local NODE = LibStub('ConsolePortNode')
+	if NODE and NODE.NavigateToBestCandidateV3 then
+		local currentNode = NavGraph:IndexToNode(currentIndex)
+		local graphData = NavGraph:GetGraph()
+		local currentCacheItem = graphData.nodeCacheItems[currentIndex]
+		
+		if currentNode and currentCacheItem then
+			-- Recalculate current position for accuracy
+			local x, y = NavGraph:GetNodePosition(currentIndex)
+			
+			if x and y then
+				local currentItem = {
+					node = currentNode,
+					super = currentCacheItem.super,
+					x = x,
+					y = y
+				}
+				
+				local targetItem = NODE.NavigateToBestCandidateV3(currentItem, direction:upper())
+				if targetItem and targetItem.node then
+					-- Try to find this node in our graph
+					local fallbackIndex = NavGraph:NodeToIndex(targetItem.node)
+					if fallbackIndex then
+						-- Found via fallback, but graph may need rebuild
+						return fallbackIndex
+					end
+				end
+				
+				-- Fallback found nothing or node not in graph - invalidate
+				NavGraph:InvalidateGraph()
+			end
+		end
+	end
+	
+	return nil
 end
 
 ---Navigate to an adjacent node in the specified direction
@@ -569,18 +585,18 @@ local function RequestGraphRebuild()
     end)
 end
 
----Register OnShow/OnHide hooks for all allowed frames
+---Register OnShow/OnHide hooks for frames that exist at startup
+---Late-loaded and on-demand frames are hooked lazily in _CollectVisibleFrames()
 ---@private
 function Hijack:_RegisterVisibilityHooks()
     if self.RebuildState.hooksRegistered then
         return
     end
     
-    
     local hooksRegistered = 0
-    for _, frameName in ipairs(ALLOWED_FRAMES) do
+    for _, frameName in ipairs(FRAMES) do
         local frame = _G[frameName]
-        if frame then
+        if frame and not frame.CPLight_HooksRegistered then
             -- Use HookScript to avoid overwriting existing handlers
             frame:HookScript('OnShow', function()
                 if not InCombatLockdown() then
@@ -594,6 +610,7 @@ function Hijack:_RegisterVisibilityHooks()
                 end
             end)
             
+            frame.CPLight_HooksRegistered = true
             hooksRegistered = hooksRegistered + 1
         end
     end
@@ -601,45 +618,32 @@ function Hijack:_RegisterVisibilityHooks()
     self.RebuildState.hooksRegistered = true
 end
 
----Register hooks for frames from late-loaded Blizzard addons
+---Update frame registry to hook newly-loaded frames from late-loaded addons
+---Called when Blizzard addons load to catch frames that didn't exist at startup
 ---@private
-function Hijack:_RegisterLateLoadedFrameHooks()
-    
-    self:RegisterEvent('ADDON_LOADED', function(event, addonName)
-        local frames = LATE_LOADED_FRAMES[addonName]
-        if not frames then return end
-        
-        
-        for _, frameName in ipairs(frames) do
-            local frame = _G[frameName]
-            if frame then
-                frame:HookScript('OnShow', function()
-                    if not InCombatLockdown() then
-                        RequestGraphRebuild()
-                    end
-                end)
-                
-                frame:HookScript('OnHide', function()
-                    if not InCombatLockdown() then
-                        RequestGraphRebuild()
-                    end
-                end)
-                
-            else
-            end
+function Hijack:_UpdateFrameRegistry()
+    for _, frameName in ipairs(FRAMES) do
+        local frame = _G[frameName]
+        if frame and not frame.CPLight_HooksRegistered then
+            -- Hook newly-available frame
+            frame:HookScript('OnShow', function()
+                if not InCombatLockdown() then
+                    RequestGraphRebuild()
+                end
+            end)
+            
+            frame:HookScript('OnHide', function()
+                if not InCombatLockdown() then
+                    RequestGraphRebuild()
+                end
+            end)
+            
+            frame.CPLight_HooksRegistered = true
         end
-        
-        lateLoadedAddons[addonName] = true
-        
-        -- Performance optimization: unregister event once all frames hooked
-        if lateLoadedAddons["Blizzard_TalentUI"] and 
-           lateLoadedAddons["Blizzard_MacroUI"] and 
-           lateLoadedAddons["Blizzard_AuctionUI"] and 
-           lateLoadedAddons["Blizzard_InspectUI"] then
-            self:UnregisterEvent('ADDON_LOADED')
-        end
-    end)
+    end
 end
+
+
 
 ---Register game events for dynamic content changes
 ---@private
@@ -648,6 +652,22 @@ function Hijack:_RegisterGameEvents()
     self:RegisterEvent('BAG_UPDATE', function()
         if not InCombatLockdown() and Hijack.IsActive and NavGraph then
             RequestGraphRebuild()
+        end
+    end)
+    
+    -- ADDON_LOADED fires when Blizzard addons load (catches late-loaded frames)
+    self:RegisterEvent('ADDON_LOADED', function(event, addonName)
+        -- OPTIMIZATION: Instant exit if it's not a Blizzard UI module
+        -- We don't care if "DBM" or "Details" loads late
+        if not addonName:find("^Blizzard_") then
+            return
+        end
+        
+        -- If we are here, it's a Blizzard frame (Talents, Crafting, etc.)
+        -- Check if it's one we care about, then rebuild
+        if not InCombatLockdown() then
+            Hijack:_UpdateFrameRegistry() -- Hook the new frame
+            RequestGraphRebuild() -- Rebuild the graph
         end
     end)
     
@@ -759,7 +779,8 @@ function Hijack:_CanReuseGraph(currentFrameNames)
     return true
 end
 
----Collect all visible frames from the ALLOWED_FRAMES list
+---Collect all visible frames from the FRAMES list
+---Lazily registers OnShow/OnHide hooks for frames that weren't hooked at startup
 ---@return table frameObjects List of visible frame objects
 ---@return table frameNames List of visible frame names
 ---@private
@@ -767,16 +788,32 @@ function Hijack:_CollectVisibleFrames()
     local activeFrames = {}
     local frameNames = {}
     
-    for _, frameName in ipairs(ALLOWED_FRAMES) do
+    for _, frameName in ipairs(FRAMES) do
         local frame = _G[frameName]
-        if frame and frame:IsVisible() and frame:GetAlpha() > 0 then
-            table.insert(activeFrames, frame)
-            table.insert(frameNames, frameName)
+        if frame then
+            -- Lazy hook registration: hook frames that weren't available at startup
+            -- Fixes race conditions with late-loaded addons and on-demand frames
+            if not frame.CPLight_HooksRegistered then
+                frame:HookScript('OnShow', function()
+                    if not InCombatLockdown() then
+                        RequestGraphRebuild()
+                    end
+                end)
+                
+                frame:HookScript('OnHide', function()
+                    if not InCombatLockdown() then
+                        RequestGraphRebuild()
+                    end
+                end)
+                
+                frame.CPLight_HooksRegistered = true
+            end
+            
+            if frame:IsVisible() and frame:GetAlpha() > 0 then
+                table.insert(activeFrames, frame)
+                table.insert(frameNames, frameName)
+            end
         end
-    end
-    
-    if #activeFrames > 0 then
-    else
     end
     
     return activeFrames, frameNames
@@ -1145,7 +1182,6 @@ function Hijack:OnEnable()
     
     -- Register event-driven visibility detection
     self:_RegisterVisibilityHooks()
-    self:_RegisterLateLoadedFrameHooks()
     self:_RegisterGameEvents()
     
     -- Check if any frames are already open
