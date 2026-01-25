@@ -1,6 +1,7 @@
 ---------------------------------------------------------------
--- CPLight UI Navigation System
+-- SECTION 1: Module Setup & Constants
 ---------------------------------------------------------------
+-- CPLight UI Navigation System
 -- Secure state-driven UI navigation for TBC Anniversary (2.5.5)
 -- Architecture: Separates secure action handling from insecure visuals
 -- following WoW's Protected Action System requirements.
@@ -68,6 +69,10 @@ local FRAMES = {
     -- Late-Loaded Addon Frames (hooked lazily when they first appear)
     "TradeSkillFrame", "InspectFrame",
 }
+
+---------------------------------------------------------------
+-- SECTION 2: Driver Frame & State Management
+---------------------------------------------------------------
 
 ---------------------------------------------------------------
 -- Secure State Driver (Main Control Frame)
@@ -156,6 +161,10 @@ function Driver:ReleaseAll()
         self:ReleaseWidget(id)
     end
 end
+
+---------------------------------------------------------------
+-- SECTION 3: Navigation Core
+---------------------------------------------------------------
 
 ---------------------------------------------------------------
 -- Navigation Logic (Using Pre-Calculated Graph)
@@ -253,7 +262,9 @@ function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
 end
 
 ---Navigate to an adjacent node in the specified direction
+---Uses pre-calculated graph edges with real-time validation fallback
 ---@param direction string The direction to navigate ("UP", "DOWN", "LEFT", "RIGHT")
+---@public
 function Hijack:Navigate(direction)
     -- Validate navigation state
     local currentIndex = self:_ValidateNavigationState()
@@ -354,7 +365,9 @@ function Hijack:_UpdateVisualFeedback(node)
 end
 
 ---Set focus to a specific node, configuring widgets and visual feedback
+---Updates CurrentNode, configures secure widgets, and updates gauntlet/tooltip
 ---@param node Frame The node to focus on
+---@public
 function Hijack:SetFocus(node)
     -- Validate node can be focused
     if not self:_ValidateNodeFocus(node) then
@@ -378,9 +391,13 @@ function Hijack:SetFocus(node)
     self:_UpdateVisualFeedback(node)
 end
 
+---------------------------------------------------------------
+-- SECTION 5: Visual Feedback (Gauntlet & Tooltips)
+---------------------------------------------------------------
+
 ---Hide the tooltip only if we own it or it's orphaned
 ---Prevents hiding tooltips from other addons or user interactions
----@private
+---@public
 function Hijack:HideTooltip()
     if not GameTooltip:IsShown() then
         return
@@ -393,6 +410,9 @@ function Hijack:HideTooltip()
     end
 end
 
+---Show tooltip for the specified node by triggering its OnEnter script
+---@param node Frame The node to show tooltip for
+---@public
 function Hijack:ShowTooltipForNode(node)
     if not node then return end
     
@@ -499,12 +519,14 @@ function Hijack:SetGauntletState(newState)
     self.GauntletState = newState
 end
 
----Helper: Show gauntlet in pointing state
+---Show gauntlet in pointing state (convenience helper)
+---@public
 function Hijack:ShowGauntlet()
     self:SetGauntletState(GAUNTLET_STATE.POINTING)
 end
 
----Helper: Hide gauntlet
+---Hide gauntlet (convenience helper)
+---@public
 function Hijack:HideGauntlet()
     self:SetGauntletState(GAUNTLET_STATE.HIDDEN)
 end
@@ -518,6 +540,10 @@ function Hijack:SetGauntletPressed(pressed)
         self:SetGauntletState(GAUNTLET_STATE.POINTING)
     end
 end
+
+---------------------------------------------------------------
+-- SECTION 6: UI Frame Detection
+---------------------------------------------------------------
 
 ---------------------------------------------------------------
 -- Event-Driven Visibility Detection
@@ -718,6 +744,10 @@ VisibilityChecker:SetScript("OnUpdate", function(self, elapsed)
         end
     end
 end)
+
+---------------------------------------------------------------
+-- SECTION 4: Widget & Binding Management
+---------------------------------------------------------------
 
 ---Check if existing graph can be reused for current frame set
 ---@param currentFrameNames table Array of frame names currently visible
@@ -973,7 +1003,8 @@ function Hijack:_SetupSecureWidgets()
     return widgets
 end
 
----Set up PreClick and PostClick handlers for navigation and visual feedback
+---Set up PreClick handlers for D-pad navigation with visual feedback
+---Configures insecure navigation callbacks for direction buttons
 ---@param widgets table Table of widgets to configure handlers for
 ---@private
 function Hijack:_SetupNavigationHandlers(widgets)
@@ -1030,7 +1061,9 @@ end
 
 ---Enable UI navigation by building graph and setting up input handlers
 ---Uses transaction-style error handling with automatic rollback on failure
+---Collects visible frames, builds/reuses graph, sets up widgets, and initializes focus
 ---@return boolean success True if navigation was enabled successfully
+---@public
 function Hijack:EnableNavigation()
     -- Pre-checks (no state mutation)
     if InCombatLockdown() then
@@ -1128,6 +1161,9 @@ function Hijack:EnableNavigation()
 end
 
 ---Disable UI navigation and clean up all widgets and state
+---Releases widgets, clears bindings, hides visuals, and clears focus
+---Graph is preserved for potential reuse on next enable
+---@public
 function Hijack:DisableNavigation()
     if InCombatLockdown() then
         return
@@ -1177,8 +1213,10 @@ function Hijack:DisableNavigation()
 end
 
 ---------------------------------------------------------------
--- Combat Protection
+-- SECTION 7: Combat Safety
 ---------------------------------------------------------------
+
+---Handle combat start - disable navigation immediately
 function Driver:PLAYER_REGEN_DISABLED()
     -- Entering combat: disable navigation immediately
     if Hijack.IsActive then
@@ -1186,13 +1224,18 @@ function Driver:PLAYER_REGEN_DISABLED()
     end
 end
 
+---Handle combat end - allow navigation to re-enable if UI open
 function Driver:PLAYER_REGEN_ENABLED()
     -- Leaving combat: navigation will re-enable via visibility checker if UI is open
 end
 
 ---------------------------------------------------------------
--- Module Initialization
+-- SECTION 8: Module Lifecycle
 ---------------------------------------------------------------
+
+---Initialize the Hijack module on addon enable
+---Sets up gauntlet, registers visibility hooks and events, starts polling
+---@public
 function Hijack:OnEnable()
     self:CreateGauntlet()
     
@@ -1208,6 +1251,9 @@ function Hijack:OnEnable()
     
 end
 
+---Clean up the Hijack module on addon disable
+---Disables navigation, stops polling, and resets hook state
+---@public
 function Hijack:OnDisable()
     self:DisableNavigation()
     VisibilityChecker:Hide()

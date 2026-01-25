@@ -2,7 +2,7 @@
 
 **CPLight** is a lightweight gamepad addon for **World of Warcraft: TBC Anniversary (2.5.5)**. Play WoW comfortably with your controller using smooth analog movement and intuitive menu navigation—no complicated setup required.
 
-_Note: Project is not yet 100% feature complete_
+_Note: Project is 95% feature complete.  Last feature needed is a simple button mapping UI window_
 
 ## What Does It Do?
 
@@ -64,7 +64,7 @@ That's it! No configuration needed. _(At this time. Later, I will implement a mi
 - Blizzard API restrictions.  There's probably a work-around for it, but (at the moment) I don't see that its worth the effort to implement.
 
 ## TODO:
-- Ensure both primary features (movement and menu navigation) is 100% bug-free
+- ~~Ensure both primary features (movement and menu navigation) is 100% bug-free~~
 - Add an action-bar button mapping menu (only button mapping, not the full ConsolePort package)
 - Add some addon support (Questie, Immersion and the most popular & working bag addons)
 
