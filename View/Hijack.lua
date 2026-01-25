@@ -330,13 +330,11 @@ function Hijack:_UpdateVisualFeedback(node)
     -- Update gauntlet visual
     self:UpdateGauntletPosition(node)
     
-    -- Hide previous tooltip before showing new one (memory leak fix)
-    if GameTooltip:IsShown() then
-        GameTooltip:Hide()
-    end
+    -- Hide previous tooltip with ownership validation
+    self:HideTooltip()
     
     -- Show tooltip
-    self:ShowNodeTooltip(node)
+    self:ShowTooltipForNode(node)
 end
 
 ---Set focus to a specific node, configuring widgets and visual feedback
@@ -364,7 +362,22 @@ function Hijack:SetFocus(node)
     self:_UpdateVisualFeedback(node)
 end
 
-function Hijack:ShowNodeTooltip(node)
+---Hide the tooltip only if we own it or it's orphaned
+---Prevents hiding tooltips from other addons or user interactions
+---@private
+function Hijack:HideTooltip()
+    if not GameTooltip:IsShown() then
+        return
+    end
+    
+    -- Only hide tooltips we own or orphaned tooltips (no owner / UIParent)
+    local owner = GameTooltip:GetOwner()
+    if owner == self.CurrentNode or owner == UIParent or not owner then
+        GameTooltip:Hide()
+    end
+end
+
+function Hijack:ShowTooltipForNode(node)
     if not node then return end
     
     if node:HasScript("OnEnter") then
@@ -382,6 +395,29 @@ end
 ---------------------------------------------------------------
 -- Visual Gauntlet (Insecure - Cosmetic Only)
 ---------------------------------------------------------------
+
+-- Gauntlet State Machine Constants
+local GAUNTLET_STATE = {
+    HIDDEN = 'hidden',
+    POINTING = 'pointing',
+    PRESSING = 'pressing',
+}
+
+-- Valid State Transitions
+local VALID_TRANSITIONS = {
+    [GAUNTLET_STATE.HIDDEN] = {
+        [GAUNTLET_STATE.POINTING] = true,
+    },
+    [GAUNTLET_STATE.POINTING] = {
+        [GAUNTLET_STATE.PRESSING] = true,
+        [GAUNTLET_STATE.HIDDEN] = true,
+    },
+    [GAUNTLET_STATE.PRESSING] = {
+        [GAUNTLET_STATE.POINTING] = true,
+        [GAUNTLET_STATE.HIDDEN] = true,
+    },
+}
+
 function Hijack:CreateGauntlet()
     local gauntlet = CreateFrame("Frame", "CPLightGauntlet", UIParent)
     gauntlet:SetFrameStrata("TOOLTIP")
@@ -400,25 +436,70 @@ end
 function Hijack:UpdateGauntletPosition(node)
     if not self.Gauntlet or not node then return end
     
+    -- Ensure gauntlet is in valid visible state (recovery from hidden state)
+    if self.GauntletState == GAUNTLET_STATE.HIDDEN then
+        self:SetGauntletState(GAUNTLET_STATE.POINTING)
+    end
+    
     local x, y = NODE.GetCenterScaled(node)
     if not x or not y then return end
     
     self.Gauntlet:ClearAllPoints()
     -- Position using scaled coordinates from NODE library
     -- Offset to center the pointer finger (top-left of texture) on the node center
-    self.Gauntlet:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x - 8, y + 8)
+    self.Gauntlet:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x - 4, y - 28)
     self.Gauntlet:Show()
 end
 
-function Hijack:SetGauntletPressed(pressed)
+---Set the gauntlet visual state with transition validation and state tracking
+---@param newState string The target state ('hidden', 'pointing', or 'pressing')
+function Hijack:SetGauntletState(newState)
     if not self.Gauntlet then return end
     
-    if pressed then
-        self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Interact")
-        self.Gauntlet:SetSize(38, 38)
-    else
+    local currentState = self.GauntletState or GAUNTLET_STATE.HIDDEN
+    
+    -- Validate transition (log warning but allow for recovery)
+    if currentState ~= newState then
+        if not VALID_TRANSITIONS[currentState] or not VALID_TRANSITIONS[currentState][newState] then
+            CPAPI.Log('WARNING: Invalid gauntlet transition: %s → %s', currentState, newState)
+            -- Allow transition anyway (fail-open for recovery)
+        end
+    end
+    
+    -- Apply state
+    if newState == GAUNTLET_STATE.HIDDEN then
+        self.Gauntlet:Hide()
+    elseif newState == GAUNTLET_STATE.POINTING then
         self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Point")
         self.Gauntlet:SetSize(32, 32)
+        self.Gauntlet:Show()
+    elseif newState == GAUNTLET_STATE.PRESSING then
+        self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Interact")
+        self.Gauntlet:SetSize(38, 38)
+        self.Gauntlet:Show()
+    end
+    
+    -- Track current state
+    self.GauntletState = newState
+end
+
+---Helper: Show gauntlet in pointing state
+function Hijack:ShowGauntlet()
+    self:SetGauntletState(GAUNTLET_STATE.POINTING)
+end
+
+---Helper: Hide gauntlet
+function Hijack:HideGauntlet()
+    self:SetGauntletState(GAUNTLET_STATE.HIDDEN)
+end
+
+---Set gauntlet pressed/unpressed state (backward-compatible helper for button handlers)
+---@param pressed boolean True for pressing state, false for pointing state
+function Hijack:SetGauntletPressed(pressed)
+    if pressed then
+        self:SetGauntletState(GAUNTLET_STATE.PRESSING)
+    else
+        self:SetGauntletState(GAUNTLET_STATE.POINTING)
     end
 end
 
@@ -784,15 +865,11 @@ function Hijack:_RollbackEnableState()
     -- Clear current node
     self.CurrentNode = nil
     
-    -- Hide visual elements
-    if self.Gauntlet then
-        self.Gauntlet:Hide()
-    end
+    -- Hide visual elements with proper state management
+    self:HideGauntlet()
     
     -- Hide tooltip
-    if GameTooltip and GameTooltip:IsShown() then
-        GameTooltip:Hide()
-    end
+    self:HideTooltip()
 end
 
 ---------------------------------------------------------------
@@ -978,6 +1055,9 @@ function Hijack:EnableNavigation()
         -- Step 6: Initial focus
         self:SetFocus(firstNode)
         
+        -- Step 7: Ensure gauntlet starts in correct state
+        self:SetGauntletState(GAUNTLET_STATE.POINTING)
+        
         return true
     end)
     
@@ -1026,17 +1106,11 @@ function Hijack:DisableNavigation()
         end
     end
     
-    -- Hide gauntlet
-    if self.Gauntlet then
-        self.Gauntlet:Hide()
-    end
+    -- Hide gauntlet with proper state transition
+    self:HideGauntlet()
     
-    -- Hide tooltip (improved cleanup)
-    if GameTooltip:IsShown() then
-        if not self.CurrentNode or GameTooltip:GetOwner() == self.CurrentNode or GameTooltip:IsOwned(UIParent) then
-            GameTooltip:Hide()
-        end
-    end
+    -- Hide tooltip using centralized method with ownership validation
+    self:HideTooltip()
     
     -- Clear state
     self.CurrentNode = nil
