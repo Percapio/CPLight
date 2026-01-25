@@ -17,7 +17,19 @@ local NavGraph = _G.CPLightNavigationGraph
 Hijack.LastGraphState = {
     frameNames = {},  -- Array of frame names from last successful build
     nodeCount = 0,    -- Node count from last successful build
+    buildTime = 0,    -- Timestamp of last build (for staleness check)
 }
+
+---------------------------------------------------------------
+-- OPTIONAL ENHANCEMENT #1: Cache Hit Metrics (Bug 1 Improvement)
+---------------------------------------------------------------
+-- Track graph reuse performance for monitoring
+-- TO DISABLE: Comment out this entire section
+Hijack.GraphCacheStats = {
+    hits = 0,    -- Graph reused without rebuild
+    misses = 0,  -- Graph rebuilt due to changes
+}
+---------------------------------------------------------------
 
 ---------------------------------------------------------------
 -- Event-Driven Rebuild Request State
@@ -647,6 +659,21 @@ function Hijack:_CanReuseGraph(currentFrameNames)
         return false
     end
     
+    ---------------------------------------------------------------
+    -- OPTIONAL ENHANCEMENT #2: Timestamp Validation (Bug 1 Improvement)
+    ---------------------------------------------------------------
+    -- Force rebuild if graph is too old (prevents stale graphs)
+    -- TO DISABLE: Comment out this block
+    local GRAPH_STALE_THRESHOLD = 30  -- seconds
+    if self.LastGraphState.buildTime and GetTime then
+        local graphAge = GetTime() - self.LastGraphState.buildTime
+        if graphAge > GRAPH_STALE_THRESHOLD then
+            CPAPI.Log('ERROR: Navigation enable failed: Graph is stale (age=%d seconds)', graphAge)
+            return false  -- Force rebuild for stale graphs
+        end
+    end
+    ---------------------------------------------------------------
+    
     -- All checks passed: graph can be reused
     return true
 end
@@ -706,65 +733,124 @@ function Hijack:_BuildAndExportGraph(frames, frameNames)
     if frameNames and #frameNames > 0 then
         self.LastGraphState.frameNames = frameNames
         self.LastGraphState.nodeCount = nodeCount
+        
+        -- OPTIONAL: Save build timestamp (Bug 1 Enhancement #2)
+        if GetTime then
+            self.LastGraphState.buildTime = GetTime()
+        end
     end
     
     return true
 end
 
----Set up secure input widgets and bindings for navigation
+---------------------------------------------------------------
+-- BUG 2 FIX: Rollback Helpers (Transaction-Style Error Handling)
+---------------------------------------------------------------
+
+---Clear bindings for a specific list of widgets
+---@param widgetList table Array of widgets to clear bindings for
+---@private
+function Hijack:_ClearBindings(widgetList)
+    if not widgetList then return end
+    
+    for _, widget in ipairs(widgetList) do
+        if widget then
+            ClearOverrideBindings(widget)
+        end
+    end
+end
+
+---Rollback partial enable state on failure
+---Cleans up any widgets, bindings, and visual elements that may have been set up
+---@private
+function Hijack:_RollbackEnableState()
+    -- Clear all bindings
+    if Driver and Driver.Widgets then
+        for id, widget in pairs(Driver.Widgets) do
+            if widget then
+                ClearOverrideBindings(widget)
+            end
+        end
+    end
+    
+    -- Release all widgets
+    if Driver and Driver.ReleaseAll then
+        Driver:ReleaseAll()
+    end
+    
+    -- Ensure IsActive is false
+    self.IsActive = false
+    
+    -- Clear current node
+    self.CurrentNode = nil
+    
+    -- Hide visual elements
+    if self.Gauntlet then
+        self.Gauntlet:Hide()
+    end
+    
+    -- Hide tooltip
+    if GameTooltip and GameTooltip:IsShown() then
+        GameTooltip:Hide()
+    end
+end
+
+---------------------------------------------------------------
+
+---Set up secure input widgets and bindings for navigation (with rollback on failure)
 ---@return table|nil widgets Table of configured widgets, or nil on failure
 ---@private
 function Hijack:_SetupSecureWidgets()
     assert(not InCombatLockdown(), 'Cannot setup widgets during combat')
 
     local widgets = {}
-    local widgetCount = 0
+    local successfulBindings = {}  -- Track for rollback
+    
+    -- Helper: Try to set up a widget, track success, cleanup on failure
+    local function trySetupWidget(id, binding, mouseButton)
+        local widget = Driver:GetWidget(id, 'Hijack')
+        if not widget then
+            -- Cleanup successful bindings on failure
+            self:_ClearBindings(successfulBindings)
+            return nil
+        end
+        
+        SetOverrideBindingClick(widget, true, binding, widget:GetName(), mouseButton or 'LeftButton')
+        table.insert(successfulBindings, widget)
+        return widget
+    end
     
     -- Set up PAD1 (primary action)
-    widgets.pad1 = Driver:GetWidget('PAD1', 'Hijack')
-    if widgets.pad1 then
-        SetOverrideBindingClick(widgets.pad1, true, 'PAD1', widgets.pad1:GetName(), 'LeftButton')
-        widgetCount = widgetCount + 1
-    else
+    widgets.pad1 = trySetupWidget('PAD1', 'PAD1', 'LeftButton')
+    if not widgets.pad1 then
         return nil
     end
     
     -- Set up PAD2 (right-click action)
-    widgets.pad2 = Driver:GetWidget('PAD2', 'Hijack')
-    if widgets.pad2 then
-        SetOverrideBindingClick(widgets.pad2, true, 'PAD2', widgets.pad2:GetName(), 'RightButton')
-        widgetCount = widgetCount + 1
-    else
+    widgets.pad2 = trySetupWidget('PAD2', 'PAD2', 'RightButton')
+    if not widgets.pad2 then
         return nil
     end
     
     -- Set up D-Pad navigation widgets
-    widgets.up = Driver:GetWidget('PADDUP', 'Hijack')
-    if widgets.up then
-        SetOverrideBindingClick(widgets.up, true, 'PADDUP', widgets.up:GetName(), 'LeftButton')
-        widgetCount = widgetCount + 1
-    else
+    widgets.up = trySetupWidget('PADDUP', 'PADDUP')
+    if not widgets.up then
+        return nil
     end
     
-    widgets.down = Driver:GetWidget('PADDDOWN', 'Hijack')
-    if widgets.down then
-        SetOverrideBindingClick(widgets.down, true, 'PADDDOWN', widgets.down:GetName(), 'LeftButton')
-        widgetCount = widgetCount + 1
-    else
+    widgets.down = trySetupWidget('PADDDOWN', 'PADDDOWN')
+    if not widgets.down then
+        return nil
     end
     
-    widgets.left = Driver:GetWidget('PADDLEFT', 'Hijack')
-    if widgets.left then
-        SetOverrideBindingClick(widgets.left, true, 'PADDLEFT', widgets.left:GetName(), 'LeftButton')
-        widgetCount = widgetCount + 1
-    else
+    widgets.left = trySetupWidget('PADDLEFT', 'PADDLEFT')
+    if not widgets.left then
+        return nil
     end
     
-    widgets.right = Driver:GetWidget('PADDRIGHT', 'Hijack')
-    if widgets.right then
-        SetOverrideBindingClick(widgets.right, true, 'PADDRIGHT', widgets.right:GetName(), 'LeftButton')
-        widgetCount = widgetCount + 1
-    else
+    widgets.right = trySetupWidget('PADDRIGHT', 'PADDRIGHT')
+    if not widgets.right then
+        return nil
     end
     
     return widgets
@@ -826,59 +912,86 @@ function Hijack:_SetupNavigationHandlers(widgets)
 end
 
 ---Enable UI navigation by building graph and setting up input handlers
+---Uses transaction-style error handling with automatic rollback on failure
+---@return boolean success True if navigation was enabled successfully
 function Hijack:EnableNavigation()
+    -- Pre-checks (no state mutation)
     if InCombatLockdown() then
-        return
+        return false
     end
     
     if self.IsActive then
-        return
+        return false
     end
     
-    
-    -- Step 1: Collect visible frames
+    -- Collect visible frames
     local activeFrames, frameNames = self:_CollectVisibleFrames()
     if #activeFrames == 0 then
-        return
+        return false
     end
     
-    -- Step 2: Check if we can reuse existing graph (performance optimization)
-    local canReuseGraph = self:_CanReuseGraph(frameNames)
-    
-    -- Step 3: Build/export graph only if needed
-    if not canReuseGraph then
-        if not self:_BuildAndExportGraph(activeFrames, frameNames) then
-            return
+    -- BUG 2 FIX: Transaction-style setup with automatic rollback on failure
+    local success, errorMsg = pcall(function()
+        -- Step 1: Build/export graph if needed
+        local canReuseGraph = self:_CanReuseGraph(frameNames)
+        
+        if not canReuseGraph then
+            local graphBuilt = self:_BuildAndExportGraph(activeFrames, frameNames)
+            if not graphBuilt then
+                error("Failed to build navigation graph")
+            end
+            
+            -- OPTIONAL: Track cache miss (Bug 1 Enhancement #1)
+            if self.GraphCacheStats then
+                self.GraphCacheStats.misses = self.GraphCacheStats.misses + 1
+            end
+        else
+            -- OPTIONAL: Track cache hit (Bug 1 Enhancement #1)
+            if self.GraphCacheStats then
+                self.GraphCacheStats.hits = self.GraphCacheStats.hits + 1
+            end
         end
-    else
+        
+        -- Step 2: Validate first node exists
+        local firstIndex = NavGraph:GetFirstNodeIndex()
+        if not firstIndex then
+            error("Graph has no nodes")
+        end
+        
+        local firstNode = NavGraph:IndexToNode(firstIndex)
+        if not firstNode then
+            error("First node index has no node reference")
+        end
+        
+        -- Step 3: Set up secure input widgets and bindings (with rollback)
+        local widgets = self:_SetupSecureWidgets()
+        if not widgets then
+            error("Widget setup failed")
+        end
+        
+        -- Step 4: Set up navigation handlers
+        self:_SetupNavigationHandlers(widgets)
+        
+        -- Step 5: Mark as active (commit point)
+        self.IsActive = true
+        
+        -- Step 6: Initial focus
+        self:SetFocus(firstNode)
+        
+        return true
+    end)
+    
+    if not success then
+        -- Rollback on failure
+        self:_RollbackEnableState()
+        
+        -- Log error (colored red for visibility)
+        print("|cFFFF0000CPLight EnableNavigation failed:|r", errorMsg)
+        
+        return false
     end
     
-    -- Step 4: Get first node to focus
-    local firstIndex = NavGraph:GetFirstNodeIndex()
-    if not firstIndex then
-        return
-    end
-    
-    local firstNode = NavGraph:IndexToNode(firstIndex)
-    if not firstNode then
-        return
-    end
-    
-    -- Step 5: Set up secure input widgets and bindings
-    local widgets = self:_SetupSecureWidgets()
-    if not widgets then
-        return
-    end
-    
-    -- Step 6: Set up navigation handlers
-    self:_SetupNavigationHandlers(widgets)
-    
-    -- Step 7: Mark navigation as active AFTER all setup succeeds
-    self.IsActive = true
-    
-    -- Step 8: Focus on first node
-    self:SetFocus(firstNode)
-    
+    return true
 end
 
 ---Disable UI navigation and clean up all widgets and state
@@ -974,3 +1087,26 @@ function Hijack:OnDisable()
     VisibilityChecker:Hide()
     self.RebuildState.hooksRegistered = false
 end
+
+---------------------------------------------------------------
+-- OPTIONAL ENHANCEMENT #1: Cache Statistics API (Bug 1 Improvement)
+---------------------------------------------------------------
+-- Get graph cache performance metrics
+-- TO DISABLE: Comment out this entire function
+-- function Hijack:GetGraphCacheStats()
+--     if not self.GraphCacheStats then
+--         return nil
+--     end
+    
+--     local total = self.GraphCacheStats.hits + self.GraphCacheStats.misses
+--     local hitRate = total > 0 and (self.GraphCacheStats.hits / total * 100) or 0
+--     CPAPI.Log('Cache Stats: Hits=%d, Misses=%d, HitRate=%.1f%%', self.GraphCacheStats.hits, self.GraphCacheStats.misses, hitRate)
+
+--     return {
+--         hits = self.GraphCacheStats.hits,
+--         misses = self.GraphCacheStats.misses,
+--         total = total,
+--         hitRate = string.format("%.1f%%", hitRate),
+--     }
+-- end
+---------------------------------------------------------------

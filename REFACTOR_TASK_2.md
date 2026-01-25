@@ -372,104 +372,16 @@ User presses PAD1 → Widget clicks node → Game handles click
 
 ---
 
-## 🐛 MISSED FIXES & EDGE CASES
-
-### Fix 1: Graph Invalidation Timing
-**Issue:** Graph invalidated on every DisableNavigation, even temporary closures  
-**Impact:** Rebuilds graph unnecessarily when user rapidly opens/closes same frame
-
-**Fix:** Smart invalidation
-```lua
--- Track which frames graph was built from
-Hijack.LastGraphFrames = {}
-
-function Hijack:_ShouldRebuildGraph(currentFrames)
-    -- Compare frame lists
-    if #currentFrames ~= #self.LastGraphFrames then return true end
-    
-    -- Check if same frames
-    local frameSet = {}
-    for _, frame in ipairs(self.LastGraphFrames) do
-        frameSet[frame] = true
-    end
-    
-    for _, frame in ipairs(currentFrames) do
-        if not frameSet[frame] then return true end
-    end
-    
-    return false
-end
-```
-
-### Fix 2: Widget Cleanup on Errors
-**Issue:** If EnableNavigation fails partway through, widgets may be in invalid state  
-**Fix:** Rollback on failure
-
-```lua
-function Hijack:EnableNavigation()
-    -- Attempt enable...
-    local success, err = pcall(function()
-        -- All setup here
-    end)
-    
-    if not success then
-        CPAPI.Log('ERROR: Navigation enable failed: %s', err)
-        self:DisableNavigation()  -- Cleanup
-        return false
-    end
-end
-```
-
-### Fix 3: Node Position Caching
-**Issue:** NODE.GetCenterScaled() called frequently for gauntlet updates  
-**Fix:** Cache positions in NavigationGraph
-
-```lua
--- Already stored in graph.nodes[index].x/y
--- Use NavGraph:GetNodePosition(index) instead of repeated NODE calls
-```
-
-### Fix 4: Tooltip Ownership Validation
-**Issue:** GameTooltip:Hide() may hide unrelated tooltips  
-**Fix:** Check ownership before hiding
-
-```lua
-function Hijack:HideTooltip()
-    if GameTooltip:IsShown() then
-        local owner = GameTooltip:GetOwner()
-        if owner == self.CurrentNode or owner == UIParent then
-            GameTooltip:Hide()
-        end
-    end
-end
-```
-
-### Fix 5: Memory Leak - Frame Hooks
-**Issue:** If RegisterVisibilityHooks() called multiple times, creates duplicate hooks  
-**Fix:** Track hook state
-
-```lua
-Hijack.VisibilityHooksRegistered = false
-
-function Hijack:RegisterVisibilityHooks()
-    if self.VisibilityHooksRegistered then return end
-    -- Hook frames...
-    self.VisibilityHooksRegistered = true
-end
-```
-
----
-
 ## 📋 IMPLEMENTATION CHECKLIST
 
-### Phase 3: Visual Feedback Decoupling
+### Phase 2: Visual Feedback Decoupling
 - ☐ Create UpdateVisualFeedback(node) coordinator
 - ☐ Extract gauntlet logic to SetGauntletState(state)
 - ☐ Centralize tooltip management (ShowTooltipForNode, HideTooltip)
 - ☐ Update SetFocus() to use new visual methods
 - ☐ Remove inline gauntlet updates from PreClick handlers
 
-### Phase 4: Combat Safety
+### Phase 3: Combat Safety
 - ☐ Implement RegisterVisibilityHooks() with OnShow/OnHide
 - ☐ Create OnUIFrameVisibilityChanged() event handler
 - ☐ Add OnCombatStart/OnCombatEnd with state tracking
@@ -477,7 +389,7 @@ end
 - ☐ Test rapid combat transitions
 - ☐ Test UI open → combat → UI close → combat end sequence
 
-### Phase 5: Module Separation
+### Phase 4: Module Separation
 - ☐ Reorganize Hijack.lua into 8 logical sections
 - ☐ Extract inline PreClick handlers to named methods
 - ☐ Add LuaDoc comments to all public methods
@@ -502,7 +414,7 @@ end
 - ✅ Multiple frames open (bags + character)
 - ✅ Dynamic UI changes (add items to bags)
 
-### New Tests for Phase 3-5
+### New Tests for Phase 2-4
 - ☐ Rapid frame open/close (shouldn't rebuild graph every time)
 - ☐ Navigation during loading screens
 - ☐ Memory profiling (no leaks from tooltips/hooks)
@@ -570,14 +482,10 @@ end
    - **Mitigation:** Separate navigation from action execution
    - **Alternative:** Full secure snippet implementation (Phase 2 - skipped)
 
-2. **OnUpdate Fallback:** Some frames lack OnShow/OnHide events
-   - **Impact:** Can't be fully event-driven
-   - **Mitigation:** 0.5s interval polling as fallback
-
-3. **NODE Library Dependency:** Relies on external library for frame scanning
+2. **NODE Library Dependency:** Relies on external library for frame scanning
    - **Risk:** Library bugs affect our navigation
    - **Mitigation:** Defensive validation, fallback to simple frame list
 
-4. **No Cross-Addon Navigation:** Only works with Blizzard UI frames
+3. **No Cross-Addon Navigation:** Only works with Blizzard UI frames
    - **Limitation:** Can't navigate custom addon UIs without explicit support
    - **Future:** Add API for addons to register navigable frames
