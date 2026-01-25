@@ -3,7 +3,7 @@
 ## 🎯 Objective
 Improve code quality, stability, and maintainability by completing remaining refactor phases and properly separating concerns across three modules.
 
-**Status:** Phase 1 Complete ✅  
+**Status:** Phase 1 & 2 Complete ✅  
 **Approach:** Pragmatic insecure navigation (accepting PreClick taint risk for simplicity)
 
 ---
@@ -21,72 +21,6 @@ Improve code quality, stability, and maintainability by completing remaining ref
 ---
 
 ## 🔧 REMAINING WORK
-
-### Phase 2: Decouple Visual Feedback
-**Goal:** Separate cosmetic updates from navigation logic for better maintainability and testability.
-
-#### 2.1 Move Gauntlet Updates Out of Navigation Flow
-**Current:** Gauntlet position updates happen inline in `SetFocus()`  
-**Target:** Create dedicated visual update methods
-
-**Changes needed:**
-```lua
--- IN: Hijack.lua
--- Create visual update coordinator
-function Hijack:UpdateVisualFeedback(node)
-    if not node then return end
-    self:UpdateGauntletPosition(node)
-    self:ShowNodeTooltip(node)
-end
-
--- Simplify SetFocus to focus on state management
-function Hijack:SetFocus(node)
-    -- Validation...
-    self.CurrentNode = node
-    self:_ConfigureWidgetsForNode(node)
-    self:UpdateVisualFeedback(node)  -- Separated concern
-end
-```
-
-#### 2.2 Centralize Tooltip Management
-**Issue:** Tooltips shown in multiple places without consistent cleanup  
-**Fix:** Create tooltip manager methods
-
-```lua
-function Hijack:ShowTooltipForNode(node)
-    self:HideTooltip()  -- Always clear first
-    -- Tooltip logic here
-end
-
-function Hijack:HideTooltip()
-    if GameTooltip:IsShown() then
-        GameTooltip:Hide()
-    end
-end
-```
-
-#### 2.3 Gauntlet State Machine
-**Issue:** Gauntlet pressed/unpressed state scattered across PreClick/PostClick  
-**Fix:** Centralize state management
-
-```lua
-function Hijack:SetGauntletState(state)
-    -- state: 'hidden', 'pointing', 'pressing'
-    if state == 'hidden' then
-        self.Gauntlet:Hide()
-    elseif state == 'pointing' then
-        self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Point")
-        self.Gauntlet:SetSize(32, 32)
-        self.Gauntlet:Show()
-    elseif state == 'pressing' then
-        self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Interact")
-        self.Gauntlet:SetSize(38, 38)
-        self.Gauntlet:Show()
-    end
-end
-```
-
----
 
 ### Phase 3: Combat Safety Enhancements
 **Goal:** Ensure robust combat lockdown handling with no edge cases.

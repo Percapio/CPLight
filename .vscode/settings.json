@@ -1,13 +1,15 @@
 {
     "Lua.runtime.version": "Lua 5.1",
     "Lua.runtime.builtin": {
-        "basic": "enable", 
-        "math": "enable",
-        "string": "enable",
-        "table": "enable",
+        "basic": "disable",
         "debug": "disable",
         "io": "disable",
-        "os": "disable"
+        "math": "disable",
+        "os": "disable",
+        "package": "disable",
+        "string": "disable",
+        "table": "disable",
+        "utf8": "disable"
     },
     "Lua.workspace.library": [
         "~\\.vscode\\extensions\\ketho.wow-api-0.21.0\\Annotations\\Core"
@@ -20,7 +22,7 @@
         "UIParent",
         "_G",
         "SecureHandlerStateTemplate",
-        "RegisterStateDriver"
+        "ExtraActionButton1"
     ],
     "Lua.diagnostics.globals": [
         "CPLight", "db", "CPAPI", "UIParent", "_G", "SecureHandlerStateTemplate"
