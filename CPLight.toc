@@ -19,6 +19,5 @@ Templates\Cursor.xml
 Core\__manifest.xml
 
 Utils\__manifest.xml
-Model\__manifest.xml
 Controller\__manifest.xml
 View\__manifest.xml

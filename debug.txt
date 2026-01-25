@@ -1,0 +1,128 @@
+[20:33:58] CPLight: _BuildAndExportGraph: graph exported to Driver frame successfully
+[20:33:58] CPLight: _BuildAndExportGraph: saved graph state (1 frames, 20 nodes)
+[20:33:58] CPLight: EnableNavigation: configured 6 secure input widgets with bindings
+[20:33:58] CPLight: EnableNavigation: navigation handlers configured
+[20:33:58] CPLight: SetFocus: focusing on node index 1
+[20:33:58] CPLight: EnableNavigation: UI navigation enabled successfully (20 nodes)
+[20:34:02] CPLight: Navigating RIGHT from node index 1
+[20:34:02] CPLight: Navigate: found target node index 2 in RIGHT direction
+[20:34:02] CPLight: SetFocus: focusing on node index 2
+[20:34:02] CPLight: Navigating UP from node index 2
+[20:34:02] CPLight: Navigate: found target node index 20 in UP direction
+[20:34:02] CPLight: SetFocus: focusing on node index 20
+[20:34:03] CPLight: Navigating LEFT from node index 20
+[20:34:03] CPLight: Navigate: found target node index 10 in LEFT direction
+[20:34:03] CPLight: SetFocus: focusing on node index 10
+[20:34:06] CPLight: Navigating DOWN from node index 10
+[20:34:06] CPLight: Navigate: found target node index 12 in DOWN direction
+[20:34:06] CPLight: SetFocus: focusing on node index 12
+[20:34:06] [WorldBuffs] You are on a layered realm.
+[20:34:06] [WorldBuffs] Click here to view current timers.
+[20:34:06] CPLight: Navigating UP from node index 12
+[20:34:06] CPLight: Navigate: found target node index 10 in UP direction
+[20:34:06] CPLight: SetFocus: focusing on node index 10
+[20:34:07] CPLight: Navigating UP from node index 10
+[20:34:07] CPLight: Navigate: found target node index 8 in UP direction
+[20:34:07] CPLight: SetFocus: focusing on node index 8
+[20:34:08] CPLight: Navigating LEFT from node index 8
+[20:34:08] CPLight: Navigate: found target node index 7 in LEFT direction
+[20:34:08] CPLight: SetFocus: focusing on node index 7
+[20:34:11] CPLight: DisableNavigation: disabling navigation, had 20 nodes in graph
+[20:34:11] CPLight: DisableNavigation: cleared bindings for 6 widgets
+[20:34:11] CPLight: DisableNavigation: UI navigation disabled successfully
+[20:34:13] CPLight: EnableNavigation: starting navigation enable sequence
+[20:34:13] CPLight: _CollectVisibleFrames: found 5 visible frames: ContainerFrame1, ContainerFrame2, ContainerFrame3, ContainerFrame4, ContainerFrame5
+[20:34:13] CPLight: _CanReuseGraph: frame count changed (1 → 5), rebuild required
+[20:34:13] CPLight: EnableNavigation: building new navigation graph
+[20:34:13] CPLight: Building navigation graph from 5 input frames
+[20:34:13] CPLight: Found 5 visible frames from 5 input frames
+[20:34:13] CPLight: NODE library returned 94 cache items
+[20:34:13] CPLight: Built 94 nodes with valid positions
+[20:34:13] CPLight: Calculated 376 directional edges
+[20:34:13] CPLight: Graph built successfully: 94 nodes, 376 edges
+[20:34:13] CPLight: _BuildAndExportGraph: graph built with 94 nodes
+[20:34:13] CPLight: Graph exported to secure frame: 94 nodes
+[20:34:13] CPLight: _BuildAndExportGraph: graph exported to Driver frame successfully
+[20:34:13] CPLight: _BuildAndExportGraph: saved graph state (5 frames, 94 nodes)
+[20:34:13] CPLight: EnableNavigation: configured 6 secure input widgets with bindings
+[20:34:13] CPLight: EnableNavigation: navigation handlers configured
+[20:34:13] CPLight: SetFocus: focusing on node index 1
+[20:34:13] CPLight: EnableNavigation: UI navigation enabled successfully (94 nodes)
+[20:34:13] CPLight: Navigating UP from node index 1
+[20:34:13] CPLight: Navigate: found target node index 4 in UP direction
+[20:34:13] CPLight: SetFocus: focusing on node index 4
+[20:34:14] CPLight: Navigating LEFT from node index 4
+[20:34:14] CPLight: Navigate: found target node index 5 in LEFT direction
+[20:34:14] CPLight: SetFocus: focusing on node index 5
+[20:34:15] CPLight: Navigating LEFT from node index 5
+[20:34:15] CPLight: Navigate: found target node index 6 in LEFT direction
+[20:34:15] CPLight: SetFocus: focusing on node index 6
+[20:34:22] CPLight: Graph invalidated, will rebuild on next access (had 94 nodes)
+[20:34:22] CPLight: DisableNavigation: disabling navigation, had 94 nodes in graph
+[20:34:22] CPLight: DisableNavigation: cleared bindings for 6 widgets
+[20:34:22] CPLight: DisableNavigation: UI navigation disabled successfully
+[20:34:22] CPLight: EnableNavigation: starting navigation enable sequence
+[20:34:22] CPLight: _CollectVisibleFrames: found 1 visible frames: GameMenuFrame
+[20:34:22] CPLight: _CanReuseGraph: graph is invalid or NavGraph module unavailable
+[20:34:22] CPLight: EnableNavigation: building new navigation graph
+[20:34:22] CPLight: Building navigation graph from 1 input frames
+[20:34:22] CPLight: Found 1 visible frames from 1 input frames
+[20:34:22] CPLight: NODE library returned 9 cache items
+[20:34:22] CPLight: Built 9 nodes with valid positions
+[20:34:22] CPLight: Calculated 36 directional edges
+[20:34:22] CPLight: Graph built successfully: 9 nodes, 36 edges
+[20:34:22] CPLight: _BuildAndExportGraph: graph built with 9 nodes
+[20:34:22] CPLight: Graph exported to secure frame: 9 nodes
+[20:34:22] CPLight: _BuildAndExportGraph: graph exported to Driver frame successfully
+[20:34:22] CPLight: _BuildAndExportGraph: saved graph state (1 frames, 9 nodes)
+[20:34:22] CPLight: EnableNavigation: configured 6 secure input widgets with bindings
+[20:34:22] CPLight: EnableNavigation: navigation handlers configured
+[20:34:22] CPLight: SetFocus: focusing on node index 1
+[20:34:22] CPLight: EnableNavigation: UI navigation enabled successfully (9 nodes)
+[20:34:23] CPLight: DisableNavigation: disabling navigation, had 9 nodes in graph
+[20:34:23] CPLight: DisableNavigation: cleared bindings for 6 widgets
+[20:34:23] CPLight: DisableNavigation: UI navigation disabled successfully
+[20:34:34] [G] [10:Biggestbank]: hey ima try something
+[20:34:45] [G] [10:Biggestbank]: one of you able to re-[invite] me to guild in 30seconds?
+[20:34:59] CPLight: EnableNavigation: starting navigation enable sequence
+[20:34:59] CPLight: _CollectVisibleFrames: found 1 visible frames: SpellBookFrame
+[20:34:59] CPLight: _CanReuseGraph: frame set changed (new frame: SpellBookFrame), rebuild required
+[20:34:59] CPLight: EnableNavigation: building new navigation graph
+[20:34:59] CPLight: Building navigation graph from 1 input frames
+[20:34:59] CPLight: Found 1 visible frames from 1 input frames
+[20:34:59] CPLight: NODE library returned 20 cache items
+[20:34:59] CPLight: Built 20 nodes with valid positions
+[20:34:59] CPLight: Calculated 80 directional edges
+[20:34:59] CPLight: Graph built successfully: 20 nodes, 80 edges
+[20:34:59] CPLight: _BuildAndExportGraph: graph built with 20 nodes
+[20:34:59] CPLight: Graph exported to secure frame: 20 nodes
+[20:34:59] CPLight: _BuildAndExportGraph: graph exported to Driver frame successfully
+[20:34:59] CPLight: _BuildAndExportGraph: saved graph state (1 frames, 20 nodes)
+[20:34:59] CPLight: EnableNavigation: configured 6 secure input widgets with bindings
+[20:34:59] CPLight: EnableNavigation: navigation handlers configured
+[20:34:59] CPLight: SetFocus: focusing on node index 1
+[20:34:59] CPLight: EnableNavigation: UI navigation enabled successfully (20 nodes)
+[20:35:00] CPLight: DisableNavigation: disabling navigation, had 20 nodes in graph
+[20:35:00] CPLight: DisableNavigation: cleared bindings for 6 widgets
+[20:35:00] CPLight: DisableNavigation: UI navigation disabled successfully
+[20:35:01] CPLight: EnableNavigation: starting navigation enable sequence
+[20:35:01] CPLight: _CollectVisibleFrames: found 5 visible frames: ContainerFrame1, ContainerFrame2, ContainerFrame3, ContainerFrame4, ContainerFrame5
+[20:35:01] CPLight: _CanReuseGraph: frame count changed (1 → 5), rebuild required
+[20:35:01] CPLight: EnableNavigation: building new navigation graph
+[20:35:01] CPLight: Building navigation graph from 5 input frames
+[20:35:01] CPLight: Found 5 visible frames from 5 input frames
+[20:35:01] CPLight: NODE library returned 94 cache items
+[20:35:01] CPLight: Built 94 nodes with valid positions
+[20:35:01] CPLight: Calculated 376 directional edges
+[20:35:01] CPLight: Graph built successfully: 94 nodes, 376 edges
+[20:35:01] CPLight: _BuildAndExportGraph: graph built with 94 nodes
+[20:35:01] CPLight: Graph exported to secure frame: 94 nodes
+[20:35:01] CPLight: _BuildAndExportGraph: graph exported to Driver frame successfully
+[20:35:01] CPLight: _BuildAndExportGraph: saved graph state (5 frames, 94 nodes)
+[20:35:01] CPLight: EnableNavigation: configured 6 secure input widgets with bindings
+[20:35:01] CPLight: EnableNavigation: navigation handlers configured
+[20:35:01] CPLight: SetFocus: focusing on node index 1
+[20:35:01] CPLight: EnableNavigation: UI navigation enabled successfully (94 nodes)
+[20:35:15] CPLight: DisableNavigation: disabling navigation, had 94 nodes in graph
+[20:35:15] CPLight: DisableNavigation: cleared bindings for 6 widgets
+[20:35:15] CPLight: DisableNavigation: UI navigation disabled successfully

@@ -15,7 +15,7 @@ A high-performance, minimalist gamepad interface. It provides the "ConsolePort f
 * **Purpose**: Translates analog stick input into character movement.
 * **Logic Modes**:
     * **Travel Mode (Out of Combat)**: Movement follows the direction of the analog stick (360° freedom). Uses 45° strafe angle for smooth interpolation and immediate turning response.
-    * **Tank Mode (In Combat)**: Maintains forward-facing orientation; always strafes (180° angle). Character never turns with movement stick.
+    * **Combat Mode (In Combat)**: Maintains forward-facing orientation; always strafes (180° angle). Character never turns with movement stick.
 * **Technical Requirements**:
     * **Angle System**: Uses `RegisterAttributeDriver` with `[combat] 180; 45` macro to switch between modes without taint.
         * Lower angle (45°) = character faces movement direction quickly
@@ -24,18 +24,24 @@ A high-performance, minimalist gamepad interface. It provides the "ConsolePort f
     * **Camera Integration**: Manages Pitch and Yaw to ensure the character/camera follows stick direction.
     * **Casting Guard**: Locks camera (TurnWithCamera=2) during active spell casts (`UNIT_SPELLCAST_START`) and vehicle usage.
 
-### 2. Cursor Hijack (`View/Cursors/Hijack.lua`)
+### 2. Cursor Hijack (`View/Hijack.lua`)
 * **Purpose**: Intercepts gamepad input when specific UI windows are open.
 * **Functionality**:
-    * **Frame Visibility Check**: During buttonDown events check for Frame visibility
     * **Input Override**: Uses a dedicated **Binding Driver Frame** (not `UIParent`) to override the D-Pad and PAD buttons when Blizzard UI windows are open.
-    * **Secure Proxy**: Utilizes `SecureActionButtonTemplate` to perform `LeftButton` (PAD1) and `RightButton` (PAD2) clicks on UI nodes.
     * **Gauntlet Visual**: A 32x32 texture (`Interface\CURSOR\Point`) that follows the focused node.
-    * **Navigation**: Utilizes a ConsolePortNode library for UI navigation.
-    * **Tooltip**:Show tooltip only when gauntlet is hover over a node with an object in it.
+    * **Tooltip**: Show tooltip only when gauntlet is hover over a node with an object in it.
+    * **Release Mechanism**: Ensures `ClearOverrideBindings` is called immediately when windows close, returning Jump/Movement to the player.
+    * **Combat Safety**: Automatically disables UI Hijack during `PLAYER_REGEN_DISABLED` to prevent secure header errors.
+
+### 3. Cursor Action handling (`View\Actions.lua`)
+* **Purpose**: Secure input handling on the down-press of the appropriate controller buttons.
+* **Functionality**:
+    * **Frame Visibility Check**: During buttonDown events check for Frame visibility
+    * **Navigation**: Utilizes ConsolePortNode library for secure UI navigation.
+    * **Secure Proxy**: Utilizes `SecureActionButtonTemplate` to perform `LeftButton` (PAD1) and `RightButton` (PAD2) clicks on UI nodes.
     * **Use spell/consumable**: Cast/Use spell or consumable the gauntlet is hovering over with SetOverrideBindingClick on SecureHandlerStateTemplate that covers the entire screen.
 
-### 3. API & Constants (`Utils/Const.lua`)
+### 4. API & Constants (`Utils/Const.lua`)
 * **Purpose**: Abstracts version-specific API changes to prevent Lua errors.
 * **Crucial Bridges**:
     * **Cursor API**: `CPAPI.SetCursor` maps to `C_Cursor.SetCursorPosition` (Required for 2.5.5).
@@ -43,13 +49,7 @@ A high-performance, minimalist gamepad interface. It provides the "ConsolePort f
     * **Version Constants**: `CPAPI.IsAnniVersion` to toggle logic specific to the 2.5.5 client.
     * **Movement Constants**: `CPAPI.Movement` table defines angles (Combat=180, Travel=45) and camera lock behavior for consistent project-wide usage.
 
-### 4. State Orchestrator (`Core/State.lua`)
-* **Purpose**: Manages the "Hand-off" between the World (Movement) and the UI (Hijack).
-* **Logic**:
-    * **Release Mechanism**: Ensures `ClearOverrideBindings` is called immediately when windows close, returning Jump/Movement to the player.
-    * **Combat Safety**: Automatically disables UI Hijack during `PLAYER_REGEN_DISABLED` to prevent secure header errors.
-
-### 5. Bonus Feature(s)
+### 5. Bonus Feature(s) (`TBD`)
 * **Purpose**: Any additional nice to have if able to implement later on in the project's life cycle.
 * **Logic**: 
     * **Target tooltip**: when soft/hard lock a target, show tooltip.
