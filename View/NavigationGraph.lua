@@ -47,7 +47,6 @@ local graph = {
 ---@return table|nil frameObjects Array of visible frame objects, or nil on failure
 function NavigationGraph:_ValidateAndConvertFrames(frames)
 	if not frames or #frames == 0 then
-		CPAPI.Log('ERROR: No frames provided to build graph')
 		return nil
 	end
 	
@@ -65,11 +64,9 @@ function NavigationGraph:_ValidateAndConvertFrames(frames)
 	end
 	
 	if #frameObjects == 0 then
-		CPAPI.Log('ERROR: No visible frames found from %d input frames', #frames)
 		return nil
 	end
 	
-	CPAPI.Log('Found %d visible frames from %d input frames', #frameObjects, #frames)
 	return frameObjects
 end
 
@@ -78,14 +75,12 @@ end
 ---@return table|nil cache NODE library cache array, or nil on failure
 function NavigationGraph:_ScanNodesFromFrames(frameObjects)
 	if not frameObjects or #frameObjects == 0 then
-		CPAPI.Log('ERROR: No frame objects provided for scanning')
 		return nil
 	end
 	
 	-- Get NODE library
 	local NODE = LibStub('ConsolePortNode')
 	if not NODE then
-		CPAPI.Log('ERROR: ConsolePortNode library not available')
 		return nil
 	end
 	
@@ -93,16 +88,13 @@ function NavigationGraph:_ScanNodesFromFrames(frameObjects)
 	-- NODE() returns cache: array of {node, super, object, level, ...}
 	local cache = NODE(unpack(frameObjects))
 	if not cache then
-		CPAPI.Log('ERROR: NODE library returned nil cache')
 		return nil
 	end
 	
 	if type(cache) ~= 'table' or #cache == 0 then
-		CPAPI.Log('ERROR: NODE library returned empty or invalid cache')
 		return nil
 	end
 	
-	CPAPI.Log('NODE library returned %d cache items', #cache)
 	return cache
 end
 
@@ -111,13 +103,11 @@ end
 ---@return boolean success True if nodes built successfully
 function NavigationGraph:_BuildNodeArray(cache)
 	if not cache or #cache == 0 then
-		CPAPI.Log('ERROR: No cache provided for node building')
 		return false
 	end
 	
 	local NODE = LibStub('ConsolePortNode')
 	if not NODE then
-		CPAPI.Log('ERROR: ConsolePortNode library not available for node building')
 		return false
 	end
 	
@@ -127,15 +117,12 @@ function NavigationGraph:_BuildNodeArray(cache)
 	for index, cacheItem in ipairs(cache) do
 		-- Validate cache item structure
 		if not cacheItem then
-			CPAPI.Log('WARNING: Cache item at index %d is nil, skipping', index)
 		elseif type(cacheItem) ~= 'table' then
-			CPAPI.Log('WARNING: Cache item at index %d is not a table, skipping', index)
 		else
 			local node = cacheItem.node
 			
 			-- Validate node exists
 			if not node then
-				CPAPI.Log('WARNING: Cache item at index %d has no node, skipping', index)
 			else
 				-- Validate node visibility and relevance
 				local isDrawn = NODE.IsDrawn and NODE.IsDrawn(node, cacheItem.super)
@@ -157,10 +144,8 @@ function NavigationGraph:_BuildNodeArray(cache)
 							graph.nodeToIndex[node] = index
 							nodeCount = nodeCount + 1
 						else
-							CPAPI.Log('WARNING: Node at index %d has invalid position (x=%s, y=%s)', index, tostring(x), tostring(y))
 						end
 					else
-						CPAPI.Log('WARNING: NODE.GetCenterScaled is not available')
 					end
 				end
 			end
@@ -168,11 +153,9 @@ function NavigationGraph:_BuildNodeArray(cache)
 	end
 	
 	if nodeCount == 0 then
-		CPAPI.Log('ERROR: No valid nodes built from cache')
 		return false
 	end
 	
-	CPAPI.Log('Built %d nodes with valid positions', nodeCount)
 	return true
 end
 
@@ -180,18 +163,15 @@ end
 ---@return boolean success True if edges built successfully
 function NavigationGraph:_BuildDirectionalEdges()
 	if not graph.nodes or #graph.nodes == 0 then
-		CPAPI.Log('ERROR: No nodes available for edge building')
 		return false
 	end
 	
 	local NODE = LibStub('ConsolePortNode')
 	if not NODE then
-		CPAPI.Log('ERROR: ConsolePortNode library not available for edge building')
 		return false
 	end
 	
 	if not NODE.NavigateToBestCandidateV3 then
-		CPAPI.Log('ERROR: NODE.NavigateToBestCandidateV3 is not available')
 		return false
 	end
 	
@@ -203,9 +183,7 @@ function NavigationGraph:_BuildDirectionalEdges()
 	for index, nodeData in ipairs(graph.nodes) do
 		-- Validate node data
 		if not nodeData then
-			CPAPI.Log('WARNING: Node data at index %d is nil, skipping edges', index)
 		elseif type(nodeData) ~= 'table' then
-			CPAPI.Log('WARNING: Node data at index %d is not a table, skipping edges', index)
 		else
 			-- Initialize edge entry for this node
 			if not graph.edges[index] then
@@ -249,7 +227,6 @@ function NavigationGraph:_BuildDirectionalEdges()
 		end
 	end
 	
-	CPAPI.Log('Calculated %d directional edges', edgeCount)
 	return true
 end
 
@@ -258,7 +235,6 @@ end
 ---@param frames table Array of UI frame names or frame objects
 ---@return boolean success True if graph built successfully
 function NavigationGraph:BuildGraph(frames)
-	CPAPI.Log('Building navigation graph from %d input frames', frames and #frames or 0)
 	
 	-- Clear old graph
 	graph.nodes = {}
@@ -268,26 +244,22 @@ function NavigationGraph:BuildGraph(frames)
 	-- Step 1: Validate and convert frames to visible frame objects
 	local frameObjects = self:_ValidateAndConvertFrames(frames)
 	if not frameObjects then
-		CPAPI.Log('ERROR: Failed to build graph - no valid frames')
 		return false
 	end
 	
 	-- Step 2: Scan frames using NODE library
 	local cache = self:_ScanNodesFromFrames(frameObjects)
 	if not cache then
-		CPAPI.Log('ERROR: Failed to build graph - NODE scan failed')
 		return false
 	end
 	
 	-- Step 3: Build node array with positions
 	if not self:_BuildNodeArray(cache) then
-		CPAPI.Log('ERROR: Failed to build graph - node array building failed')
 		return false
 	end
 	
 	-- Step 4: Build directional edges
 	if not self:_BuildDirectionalEdges() then
-		CPAPI.Log('ERROR: Failed to build graph - edge building failed')
 		return false
 	end
 	
@@ -295,14 +267,12 @@ function NavigationGraph:BuildGraph(frames)
 	graph.isDirty = false
 	graph.lastBuildTime = GetTime()
 	
-	CPAPI.Log('Graph built successfully: %d nodes, %d edges', #graph.nodes, self:_CountEdges())
 	return true
 end
 
 ---Mark graph as stale, will rebuild on next access
 function NavigationGraph:InvalidateGraph()
 	graph.isDirty = true
-	CPAPI.Log('Graph invalidated, will rebuild on next access (had %d nodes)', #graph.nodes)
 end
 
 ---Get current graph state (for testing/debugging)
@@ -384,17 +354,14 @@ end
 ---@return boolean success True if export succeeded
 function NavigationGraph:ExportToSecureFrame(frame)
 	if not frame then
-		CPAPI.Log('ERROR: No frame provided for graph export')
 		return false
 	end
 	
 	if InCombatLockdown() then
-		CPAPI.Log('ERROR: Cannot export graph during combat')
 		return false
 	end
 	
 	if #graph.nodes == 0 then
-		CPAPI.Log('ERROR: Cannot export empty graph')
 		return false
 	end
 	
@@ -413,7 +380,6 @@ function NavigationGraph:ExportToSecureFrame(frame)
 	-- Store current node index (initialize to first node)
 	frame:SetAttribute('navGraphCurrentIndex', 1)
 	
-	CPAPI.Log('Graph exported to secure frame: %d nodes', #graph.nodes)
 	return true
 end
 

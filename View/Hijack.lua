@@ -163,23 +163,19 @@ end
 ---@private
 function Hijack:_ValidateNavigationState()
     if InCombatLockdown() then
-        CPAPI.Log('Cannot navigate: in combat lockdown')
         return nil
     end
     
     if not self.CurrentNode then
-        CPAPI.Log('Cannot navigate: no current node')
         return nil
     end
     
     if not NavGraph then
-        CPAPI.Log('Cannot navigate: NavGraph module not available')
         return nil
     end
     
     local currentIndex = NavGraph:NodeToIndex(self.CurrentNode)
     if not currentIndex then
-        CPAPI.Log('Cannot navigate: current node not in graph, attempting recovery')
         -- Try to recover by focusing on first node
         local firstIndex = NavGraph:GetFirstNodeIndex()
         if firstIndex then
@@ -203,7 +199,6 @@ function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
     -- Get neighbor index from pre-calculated edges
     local edges = NavGraph:GetNodeEdges(currentIndex)
     if not edges then
-        CPAPI.Log('Navigate: no edges found for node index %d', currentIndex)
         return nil
     end
     
@@ -211,25 +206,21 @@ function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
     local targetIndex = edges[dirKey]
     
     if not targetIndex then
-        CPAPI.Log('Navigate: no neighbor in %s direction from node index %d', direction, currentIndex)
         return nil
     end
     
     -- Get target node and validate it's still visible
     local targetNode = NavGraph:IndexToNode(targetIndex)
     if not targetNode then
-        CPAPI.Log('Navigate: target node at index %d not found in graph', targetIndex)
         NavGraph:InvalidateGraph()
         return nil
     end
     
     if not targetNode:IsVisible() then
-        CPAPI.Log('Navigate: target node at index %d is no longer visible, invalidating graph', targetIndex)
         NavGraph:InvalidateGraph()
         return nil
     end
     
-    CPAPI.Log('Navigate: found target node index %d in %s direction', targetIndex, direction)
     return targetIndex
 end
 
@@ -242,7 +233,6 @@ function Hijack:Navigate(direction)
         return
     end
     
-    CPAPI.Log('Navigating %s from node index %d', direction, currentIndex)
     
     -- Get target node in direction
     local targetIndex = self:_GetTargetNodeInDirection(currentIndex, direction)
@@ -267,22 +257,18 @@ end
 ---@private
 function Hijack:_ValidateNodeFocus(node)
     if not node then
-        CPAPI.Log('SetFocus: node is nil')
         return false
     end
     
     if InCombatLockdown() then
-        CPAPI.Log('SetFocus: cannot focus during combat lockdown')
         return false
     end
     
     if not node.IsVisible then
-        CPAPI.Log('SetFocus: node has no IsVisible method')
         return false
     end
     
     if not node:IsVisible() then
-        CPAPI.Log('SetFocus: node is not visible')
         return false
     end
     
@@ -306,7 +292,6 @@ function Hijack:_ConfigureWidgetsForNode(node)
         clickWidget:Show()
         widgetsConfigured = widgetsConfigured + 1
     else
-        CPAPI.Log('SetFocus: failed to get PAD1 widget')
     end
     
     -- Update PAD2 (right-click) widget
@@ -317,11 +302,9 @@ function Hijack:_ConfigureWidgetsForNode(node)
         rightWidget:Show()
         widgetsConfigured = widgetsConfigured + 1
     else
-        CPAPI.Log('SetFocus: failed to get PAD2 widget')
     end
     
     if widgetsConfigured == 0 then
-        CPAPI.Log('SetFocus: no widgets configured')
         return false
     end
     
@@ -355,9 +338,7 @@ function Hijack:SetFocus(node)
     -- Get node index for logging
     local nodeIndex = NavGraph and NavGraph:NodeToIndex(node)
     if nodeIndex then
-        CPAPI.Log('SetFocus: focusing on node index %d', nodeIndex)
     else
-        CPAPI.Log('SetFocus: focusing on node (index unknown)')
     end
     
     -- Update current node reference
@@ -365,7 +346,6 @@ function Hijack:SetFocus(node)
     
     -- Configure secure widgets to target this node
     if not self:_ConfigureWidgetsForNode(node) then
-        CPAPI.Log('SetFocus: widget configuration failed, but focus set')
     end
     
     -- Update visual feedback
@@ -446,7 +426,6 @@ local function RequestGraphRebuild()
     
     -- Early exit if in combat (can't rebuild during lockdown)
     if InCombatLockdown() then
-        CPAPI.Log('RequestGraphRebuild: skipping, in combat lockdown')
         return
     end
     
@@ -454,19 +433,16 @@ local function RequestGraphRebuild()
     Hijack.RebuildState.pending = true
     Hijack.RebuildState.timerGeneration = Hijack.RebuildState.timerGeneration + 1
     local generation = Hijack.RebuildState.timerGeneration
-    CPAPI.Log('RequestGraphRebuild: rebuild scheduled (100ms debounce, generation %d)', generation)
     
     -- Debounce: wait 100ms to let multiple frame changes settle
     C_Timer.After(0.1, function()
         -- Check if this is a stale timer callback
         if generation ~= Hijack.RebuildState.timerGeneration then
-            CPAPI.Log('RequestGraphRebuild: ignoring stale timer callback (generation %d, current %d)', generation, Hijack.RebuildState.timerGeneration)
             return
         end
         
         -- Re-check combat status (might have entered combat during delay)
         if InCombatLockdown() then
-            CPAPI.Log('RequestGraphRebuild: aborting, entered combat during debounce')
             Hijack.RebuildState.pending = false
             return
         end
@@ -480,24 +456,20 @@ local function RequestGraphRebuild()
         if #activeFrames > 0 then
             -- Frames visible: enable/refresh navigation
             if not Hijack.IsActive then
-                CPAPI.Log('RequestGraphRebuild: enabling navigation')
                 Hijack:EnableNavigation()
             else
                 -- Already active: check if frame set changed
                 local frameSetChanged = not Hijack:_CanReuseGraph(frameNames)
                 if frameSetChanged then
-                    CPAPI.Log('RequestGraphRebuild: frame set changed, rebuilding')
                     NavGraph:InvalidateGraph()
                     Hijack:DisableNavigation()
                     Hijack:EnableNavigation()
                 else
-                    CPAPI.Log('RequestGraphRebuild: frame set unchanged, no rebuild needed')
                 end
             end
         else
             -- No frames visible: disable navigation
             if Hijack.IsActive then
-                CPAPI.Log('RequestGraphRebuild: no visible frames, disabling navigation')
                 Hijack:DisableNavigation()
             end
         end
@@ -508,11 +480,9 @@ end
 ---@private
 function Hijack:_RegisterVisibilityHooks()
     if self.RebuildState.hooksRegistered then
-        CPAPI.Log('_RegisterVisibilityHooks: hooks already registered, skipping')
         return
     end
     
-    CPAPI.Log('_RegisterVisibilityHooks: registering OnShow/OnHide hooks for %d frames', #ALLOWED_FRAMES)
     
     local hooksRegistered = 0
     for _, frameName in ipairs(ALLOWED_FRAMES) do
@@ -521,14 +491,12 @@ function Hijack:_RegisterVisibilityHooks()
             -- Use HookScript to avoid overwriting existing handlers
             frame:HookScript('OnShow', function()
                 if not InCombatLockdown() then
-                    CPAPI.Log('Frame OnShow: %s', frameName)
                     RequestGraphRebuild()
                 end
             end)
             
             frame:HookScript('OnHide', function()
                 if not InCombatLockdown() then
-                    CPAPI.Log('Frame OnHide: %s', frameName)
                     RequestGraphRebuild()
                 end
             end)
@@ -538,40 +506,33 @@ function Hijack:_RegisterVisibilityHooks()
     end
     
     self.RebuildState.hooksRegistered = true
-    CPAPI.Log('_RegisterVisibilityHooks: registered hooks for %d frames', hooksRegistered)
 end
 
 ---Register hooks for frames from late-loaded Blizzard addons
 ---@private
 function Hijack:_RegisterLateLoadedFrameHooks()
-    CPAPI.Log('_RegisterLateLoadedFrameHooks: registering ADDON_LOADED event listener')
     
     self:RegisterEvent('ADDON_LOADED', function(event, addonName)
         local frames = LATE_LOADED_FRAMES[addonName]
         if not frames then return end
         
-        CPAPI.Log('ADDON_LOADED: %s detected, hooking frames', addonName)
         
         for _, frameName in ipairs(frames) do
             local frame = _G[frameName]
             if frame then
                 frame:HookScript('OnShow', function()
                     if not InCombatLockdown() then
-                        CPAPI.Log('Frame OnShow: %s', frameName)
                         RequestGraphRebuild()
                     end
                 end)
                 
                 frame:HookScript('OnHide', function()
                     if not InCombatLockdown() then
-                        CPAPI.Log('Frame OnHide: %s', frameName)
                         RequestGraphRebuild()
                     end
                 end)
                 
-                CPAPI.Log('  ✓ Hooked frame: %s', frameName)
             else
-                CPAPI.Log('  ⚠ Frame %s not found after %s loaded', frameName, addonName)
             end
         end
         
@@ -583,7 +544,6 @@ function Hijack:_RegisterLateLoadedFrameHooks()
            lateLoadedAddons["Blizzard_AuctionUI"] and 
            lateLoadedAddons["Blizzard_InspectUI"] then
             self:UnregisterEvent('ADDON_LOADED')
-            CPAPI.Log('_RegisterLateLoadedFrameHooks: all late-loaded frames hooked, unregistering event')
         end
     end)
 end
@@ -598,28 +558,23 @@ function Hijack:_RegisterGameEvents()
         end
     end)
     
-    CPAPI.Log('_RegisterGameEvents: registered BAG_UPDATE event')
 end
 
 ---Check initial frame visibility state on startup
 ---@private
 function Hijack:_CheckInitialVisibility()
-    CPAPI.Log('_CheckInitialVisibility: checking for frames already open')
     
     -- Wait 0.5s after hooks are registered to check initial state
     -- This ensures all frames are loaded and visible state is stable
     C_Timer.After(0.5, function()
         if InCombatLockdown() then
-            CPAPI.Log('_CheckInitialVisibility: skipping, in combat')
             return
         end
         
         local activeFrames = self:_CollectVisibleFrames()
         if #activeFrames > 0 then
-            CPAPI.Log('_CheckInitialVisibility: found %d visible frames, enabling navigation', #activeFrames)
             RequestGraphRebuild()
         else
-            CPAPI.Log('_CheckInitialVisibility: no visible frames')
         end
     end)
 end
@@ -642,7 +597,6 @@ VisibilityChecker:SetScript("OnUpdate", function(self, elapsed)
     -- Check for stale node (current node became invisible)
     if Hijack.IsActive and Hijack.CurrentNode then
         if not Hijack.CurrentNode:IsVisible() then
-            CPAPI.Log('VisibilityChecker: current node became invisible, requesting rebuild')
             NavGraph:InvalidateGraph()
             RequestGraphRebuild()
         end
@@ -656,25 +610,21 @@ end)
 function Hijack:_CanReuseGraph(currentFrameNames)
     -- Validate inputs
     if not currentFrameNames or #currentFrameNames == 0 then
-        CPAPI.Log('_CanReuseGraph: no current frames provided')
         return false
     end
     
     -- Check if NavGraph is valid
     if not NavGraph or not NavGraph:IsValid() then
-        CPAPI.Log('_CanReuseGraph: graph is invalid or NavGraph module unavailable')
         return false
     end
     
     -- Check if we have previous state to compare against
     if not self.LastGraphState or not self.LastGraphState.frameNames or #self.LastGraphState.frameNames == 0 then
-        CPAPI.Log('_CanReuseGraph: no previous graph state to compare')
         return false
     end
     
     -- Compare frame counts first (fast check)
     if #currentFrameNames ~= #self.LastGraphState.frameNames then
-        CPAPI.Log('_CanReuseGraph: frame count changed (%d → %d), rebuild required', #self.LastGraphState.frameNames, #currentFrameNames)
         return false
     end
     
@@ -687,7 +637,6 @@ function Hijack:_CanReuseGraph(currentFrameNames)
     -- Check if all current frames were in last build
     for _, frameName in ipairs(currentFrameNames) do
         if not lastFrameSet[frameName] then
-            CPAPI.Log('_CanReuseGraph: frame set changed (new frame: %s), rebuild required', frameName)
             return false
         end
     end
@@ -695,12 +644,10 @@ function Hijack:_CanReuseGraph(currentFrameNames)
     -- Verify node count hasn't changed (detects dynamic content changes)
     local currentNodeCount = NavGraph:GetNodeCount()
     if currentNodeCount ~= self.LastGraphState.nodeCount then
-        CPAPI.Log('_CanReuseGraph: node count changed (%d → %d), rebuild required', self.LastGraphState.nodeCount, currentNodeCount)
         return false
     end
     
     -- All checks passed: graph can be reused
-    CPAPI.Log('_CanReuseGraph: graph is valid and frame set unchanged, reusing existing graph')
     return true
 end
 
@@ -721,9 +668,7 @@ function Hijack:_CollectVisibleFrames()
     end
     
     if #activeFrames > 0 then
-        CPAPI.Log('_CollectVisibleFrames: found %d visible frames: %s', #activeFrames, table.concat(frameNames, ', '))
     else
-        CPAPI.Log('_CollectVisibleFrames: no visible frames found')
     end
     
     return activeFrames, frameNames
@@ -736,38 +681,31 @@ end
 ---@private
 function Hijack:_BuildAndExportGraph(frames, frameNames)
     if not NavGraph then
-        CPAPI.Log('_BuildAndExportGraph: NavGraph module not available')
         return false
     end
     
     -- Build graph using NavigationGraph module
     local success = NavGraph:BuildGraph(frames)
     if not success then
-        CPAPI.Log('_BuildAndExportGraph: NavGraph:BuildGraph() returned false')
         return false
     end
     
     local nodeCount = NavGraph:GetNodeCount()
     if not nodeCount or nodeCount == 0 then
-        CPAPI.Log('_BuildAndExportGraph: graph built but has 0 nodes')
         return false
     end
     
-    CPAPI.Log('_BuildAndExportGraph: graph built with %d nodes', nodeCount)
     
     -- Export graph to secure Driver frame
     if not NavGraph:ExportToSecureFrame(Driver) then
-        CPAPI.Log('_BuildAndExportGraph: failed to export graph to Driver frame')
         return false
     end
     
-    CPAPI.Log('_BuildAndExportGraph: graph exported to Driver frame successfully')
     
     -- Save state for future reuse checks
     if frameNames and #frameNames > 0 then
         self.LastGraphState.frameNames = frameNames
         self.LastGraphState.nodeCount = nodeCount
-        CPAPI.Log('_BuildAndExportGraph: saved graph state (%d frames, %d nodes)', #frameNames, nodeCount)
     end
     
     return true
@@ -788,7 +726,6 @@ function Hijack:_SetupSecureWidgets()
         SetOverrideBindingClick(widgets.pad1, true, 'PAD1', widgets.pad1:GetName(), 'LeftButton')
         widgetCount = widgetCount + 1
     else
-        CPAPI.Log('EnableNavigation: failed to get PAD1 widget')
         return nil
     end
     
@@ -798,7 +735,6 @@ function Hijack:_SetupSecureWidgets()
         SetOverrideBindingClick(widgets.pad2, true, 'PAD2', widgets.pad2:GetName(), 'RightButton')
         widgetCount = widgetCount + 1
     else
-        CPAPI.Log('EnableNavigation: failed to get PAD2 widget')
         return nil
     end
     
@@ -808,7 +744,6 @@ function Hijack:_SetupSecureWidgets()
         SetOverrideBindingClick(widgets.up, true, 'PADDUP', widgets.up:GetName(), 'LeftButton')
         widgetCount = widgetCount + 1
     else
-        CPAPI.Log('EnableNavigation: failed to get PADDUP widget')
     end
     
     widgets.down = Driver:GetWidget('PADDDOWN', 'Hijack')
@@ -816,7 +751,6 @@ function Hijack:_SetupSecureWidgets()
         SetOverrideBindingClick(widgets.down, true, 'PADDDOWN', widgets.down:GetName(), 'LeftButton')
         widgetCount = widgetCount + 1
     else
-        CPAPI.Log('EnableNavigation: failed to get PADDDOWN widget')
     end
     
     widgets.left = Driver:GetWidget('PADDLEFT', 'Hijack')
@@ -824,7 +758,6 @@ function Hijack:_SetupSecureWidgets()
         SetOverrideBindingClick(widgets.left, true, 'PADDLEFT', widgets.left:GetName(), 'LeftButton')
         widgetCount = widgetCount + 1
     else
-        CPAPI.Log('EnableNavigation: failed to get PADDLEFT widget')
     end
     
     widgets.right = Driver:GetWidget('PADDRIGHT', 'Hijack')
@@ -832,10 +765,8 @@ function Hijack:_SetupSecureWidgets()
         SetOverrideBindingClick(widgets.right, true, 'PADDRIGHT', widgets.right:GetName(), 'LeftButton')
         widgetCount = widgetCount + 1
     else
-        CPAPI.Log('EnableNavigation: failed to get PADDRIGHT widget')
     end
     
-    CPAPI.Log('EnableNavigation: configured %d secure input widgets with bindings', widgetCount)
     return widgets
 end
 
@@ -844,7 +775,6 @@ end
 ---@private
 function Hijack:_SetupNavigationHandlers(widgets)
     if not widgets then
-        CPAPI.Log('EnableNavigation: cannot setup handlers, widgets table is nil')
         return
     end
     
@@ -893,22 +823,18 @@ function Hijack:_SetupNavigationHandlers(widgets)
         end)
     end
     
-    CPAPI.Log('EnableNavigation: navigation handlers configured')
 end
 
 ---Enable UI navigation by building graph and setting up input handlers
 function Hijack:EnableNavigation()
     if InCombatLockdown() then
-        CPAPI.Log('EnableNavigation: cannot enable during combat lockdown')
         return
     end
     
     if self.IsActive then
-        CPAPI.Log('EnableNavigation: navigation already active')
         return
     end
     
-    CPAPI.Log('EnableNavigation: starting navigation enable sequence')
     
     -- Step 1: Collect visible frames
     local activeFrames, frameNames = self:_CollectVisibleFrames()
@@ -921,32 +847,26 @@ function Hijack:EnableNavigation()
     
     -- Step 3: Build/export graph only if needed
     if not canReuseGraph then
-        CPAPI.Log('EnableNavigation: building new navigation graph')
         if not self:_BuildAndExportGraph(activeFrames, frameNames) then
-            CPAPI.Log('EnableNavigation: failed to build/export graph, aborting')
             return
         end
     else
-        CPAPI.Log('EnableNavigation: reusing existing navigation graph')
     end
     
     -- Step 4: Get first node to focus
     local firstIndex = NavGraph:GetFirstNodeIndex()
     if not firstIndex then
-        CPAPI.Log('EnableNavigation: no first node index available')
         return
     end
     
     local firstNode = NavGraph:IndexToNode(firstIndex)
     if not firstNode then
-        CPAPI.Log('EnableNavigation: first node at index %d not found', firstIndex)
         return
     end
     
     -- Step 5: Set up secure input widgets and bindings
     local widgets = self:_SetupSecureWidgets()
     if not widgets then
-        CPAPI.Log('EnableNavigation: failed to setup secure widgets, aborting')
         return
     end
     
@@ -959,24 +879,20 @@ function Hijack:EnableNavigation()
     -- Step 8: Focus on first node
     self:SetFocus(firstNode)
     
-    CPAPI.Log('EnableNavigation: UI navigation enabled successfully (%d nodes)', NavGraph:GetNodeCount())
 end
 
 ---Disable UI navigation and clean up all widgets and state
 function Hijack:DisableNavigation()
     if InCombatLockdown() then
-        CPAPI.Log('DisableNavigation: cannot disable during combat lockdown')
         return
     end
     
     if not self.IsActive then
-        CPAPI.Log('DisableNavigation: navigation not active')
         return
     end
     
     -- Get node count before invalidating graph
     local nodeCount = NavGraph and NavGraph:GetNodeCount() or 0
-    CPAPI.Log('DisableNavigation: disabling navigation, had %d nodes in graph', nodeCount)
     
     self.IsActive = false
     
@@ -995,7 +911,6 @@ function Hijack:DisableNavigation()
                 bindingsCleared = bindingsCleared + 1
             end
         end
-        CPAPI.Log('DisableNavigation: cleared bindings for %d widgets', bindingsCleared)
     end
     
     -- Hide gauntlet
@@ -1019,7 +934,6 @@ function Hijack:DisableNavigation()
     --   2. Node becomes invalid during navigation (_GetTargetNodeInDirection)
     --   3. Current node becomes invisible (VisibilityChecker)
     
-    CPAPI.Log('DisableNavigation: UI navigation disabled successfully')
 end
 
 ---------------------------------------------------------------
@@ -1027,7 +941,6 @@ end
 ---------------------------------------------------------------
 function Driver:PLAYER_REGEN_DISABLED()
     -- Entering combat: disable navigation immediately
-    CPAPI.Log('Combat started, disabling navigation')
     if Hijack.IsActive then
         Hijack:DisableNavigation()
     end
@@ -1035,7 +948,6 @@ end
 
 function Driver:PLAYER_REGEN_ENABLED()
     -- Leaving combat: navigation will re-enable via visibility checker if UI is open
-    CPAPI.Log('Combat ended, navigation can re-enable if UI visible')
 end
 
 ---------------------------------------------------------------
@@ -1055,7 +967,6 @@ function Hijack:OnEnable()
     -- Start fallback polling (safety net)
     VisibilityChecker:Show()
     
-    CPAPI.Log('Hijack System Initialized (Event-Driven Architecture with Late-Load Support)')
 end
 
 function Hijack:OnDisable()
