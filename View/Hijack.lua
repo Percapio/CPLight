@@ -570,6 +570,9 @@ local function RequestGraphRebuild()
                 -- Already active: check if frame set changed
                 local frameSetChanged = not Hijack:_CanReuseGraph(frameNames)
                 if frameSetChanged then
+                    -- Save current focus to restore after refresh
+                    Hijack.RestoreFocusNode = Hijack.CurrentNode
+                    
                     NavGraph:InvalidateGraph()
                     Hijack:DisableNavigation()
                     Hijack:EnableNavigation()
@@ -1089,8 +1092,21 @@ function Hijack:EnableNavigation()
         -- Step 5: Mark as active (commit point)
         self.IsActive = true
         
-        -- Step 6: Initial focus
-        self:SetFocus(firstNode)
+        -- Step 6: Initial focus (or restore previous focus if refreshing)
+        local focusNode = firstNode
+        
+        -- Check if we're restoring focus from a navigation refresh
+        if self.RestoreFocusNode then
+            -- Verify the saved node is still in the new graph
+            local restoreIndex = NavGraph:NodeToIndex(self.RestoreFocusNode)
+            if restoreIndex then
+                focusNode = self.RestoreFocusNode
+            end
+            -- Clear restore state
+            self.RestoreFocusNode = nil
+        end
+        
+        self:SetFocus(focusNode)
         
         -- Step 7: Ensure gauntlet starts in correct state
         self:SetGauntletState(GAUNTLET_STATE.POINTING)
