@@ -22,9 +22,9 @@
         "UIParent",
         "_G",
         "SecureHandlerStateTemplate",
-        "Vector2D_GetLength",
-        "CreateTexturePool",
-        "ExtraActionButton1"
+        "ACCEPT",
+        "CANCEL",
+        "Settings"
     ],
     "Lua.diagnostics.globals": [
         "CPLight", "db", "CPAPI", "UIParent", "_G", "SecureHandlerStateTemplate"

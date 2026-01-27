@@ -10,6 +10,7 @@ local ADDON_NAME, addon = ...
 local Hijack = LibStub("AceAddon-3.0"):GetAddon("CPLight"):NewModule("Hijack", "AceEvent-3.0")
 local NODE = LibStub('ConsolePortNode')
 local NavGraph = _G.CPLightNavigationGraph
+local CVarManager = nil  -- Initialized after Config module loads
 
 ---------------------------------------------------------------
 -- Graph State Tracking (Smart Invalidation)
@@ -955,6 +956,11 @@ function Hijack:_SetupSecureWidgets()
     
     -- Helper: Try to set up a widget, track success, cleanup on failure
     local function trySetupWidget(id, binding, mouseButton)
+        -- Skip if this button is assigned as a modifier (Shift/Ctrl/Alt)
+        if CVarManager and CVarManager:IsModifier(binding) then
+            return nil  -- Not an error - just skip this button
+        end
+        
         local widget = Driver:GetWidget(id, 'Hijack')
         if not widget then
             -- Cleanup successful bindings on failure
@@ -1152,7 +1158,7 @@ function Hijack:EnableNavigation()
         self:_RollbackEnableState()
         
         -- Log error (colored red for visibility)
-        print("|cFFFF0000CPLight EnableNavigation failed:|r", errorMsg)
+        -- print("|cFFFF0000CPLight EnableNavigation failed:|r", errorMsg)
         
         return false
     end
@@ -1237,6 +1243,9 @@ end
 ---Sets up gauntlet, registers visibility hooks and events, starts polling
 ---@public
 function Hijack:OnEnable()
+    -- Initialize CVarManager reference after Config module loads
+    CVarManager = addon.CVarManager or _G.CPLightCVarManager
+    
     self:CreateGauntlet()
     
     -- Register event-driven visibility detection

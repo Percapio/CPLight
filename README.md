@@ -2,7 +2,7 @@
 
 **CPLight** is a lightweight gamepad addon for **World of Warcraft: TBC Anniversary (2.5.5)**. Play WoW comfortably with your controller using smooth analog movement and intuitive menu navigation—no complicated setup required.
 
-_Note: Project is 95% feature complete.  Last feature needed is a simple button mapping UI window_
+_Note: Project is 100% base feature complete. Currently, working on edge-case bug finding and refactoring to minimize project footprint._
 
 ## What Does It Do?
 
@@ -43,8 +43,8 @@ _Note: Project is 95% feature complete.  Last feature needed is a simple button 
 4. **Open any menu** (press B for bags, P for spellbook, etc.)
 5. **Navigate** using the D-Pad (up/down/left/right)
 6. **Click items** using PAD1 (A button on Xbox, Cross on PlayStation) or PAD2 (B button Xbox, Circle on Playstation)
+7. **Optional** Open Interface > Options > Addons > CPlight and assign modifiers Shift/Ctrl/Alt to the some controller buttons
 
-That's it! No configuration needed. _(At this time. Later, I will implement a minor button-mapping config window.)_
 
 ## Troubleshooting
 
@@ -65,8 +65,11 @@ That's it! No configuration needed. _(At this time. Later, I will implement a mi
 
 ## TODO:
 - ~~Ensure both primary features (movement and menu navigation) is 100% bug-free~~
-- Add an action-bar button mapping menu (only button mapping, not the full ConsolePort package)
-- Add some addon support (Questie, Immersion and the most popular & working bag addons)
+- ~~Add an action-bar button mapping menu (only button mapping, not the full ConsolePort package)~~
+- Add some addon support:
+   * Questie
+   * Immersion
+   * Baganator
 
 ## Credits
 

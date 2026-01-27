@@ -11,9 +11,13 @@
 
 Libs\LibStub\LibStub.lua
 Libs\Ace3\AceAddon-3.0\AceAddon-3.0.xml
+Libs\Ace3\AceDB-3.0\AceDB-3.0.xml
 Libs\Ace3\AceEvent-3.0\AceEvent-3.0.xml
+Libs\Ace3\AceGUI-3.0\AceGUI-3.0.xml
+Libs\Ace3\AceConfig-3.0\AceConfig-3.0.xml
 Libs\ConsolePortNode\ConsolePortNode.lua
 
+TOCversion.lua
 Templates\Cursor.xml
 
 Core\__manifest.xml
@@ -21,3 +25,4 @@ Core\__manifest.xml
 Utils\__manifest.xml
 Controller\__manifest.xml
 View\__manifest.xml
+Config\__manifest.xml

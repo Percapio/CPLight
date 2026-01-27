@@ -51,17 +51,29 @@ if not db.Data.Cvar then
 end
 
 ---------------------------------------------------------------
+-- Database Defaults
+---------------------------------------------------------------
+local defaults = {
+    global = {
+        originalCVars = nil,  -- Saved on first load: {shift="NONE", ctrl="NONE", alt="NONE"}
+    },
+    profile = {
+        modifiers = {
+            shift = "NONE",
+            ctrl = "NONE",
+            alt = "NONE",
+        },
+    },
+}
+
+---------------------------------------------------------------
 -- Lifecycle Methods
 ---------------------------------------------------------------
 function App:OnInitialize()
-    -- Initialize SavedVariables
-    if not _G.CPLightSettings then _G.CPLightSettings = {} end
-    if not _G.CPLightCharacter then _G.CPLightCharacter = {} end
-
-    self.Settings = _G.CPLightSettings
-    self.CharSettings = _G.CPLightCharacter
-
-    CPAPI.Log('System Initialized (Ace3).')
+    -- Initialize AceDB with SavedVariables
+    self.db = LibStub("AceDB-3.0"):New("CPLightDB", defaults, true)
+    
+    CPAPI.Log('System Initialized (Ace3 + AceDB).')
 end
 
 function App:OnEnable()

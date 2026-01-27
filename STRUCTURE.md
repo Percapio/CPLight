@@ -3,7 +3,7 @@
 ## Status
 **✅ Standalone Addon** – Independent database and API system. No ConsolePort dependency.  
 **✅ Environment** – Targeted specifically for **WoW TBC Anniversary (2.5.5)**.  
-**✅ Phase 1, 2, 3 & 4 Complete** – Pre-calculated navigation graph, event-driven visibility, combat safety, visual feedback decoupling, and code organization implemented.
+**✅ Phase 1, 2, 3, 4 & 5 Part 1 Complete** – Pre-calculated navigation graph, event-driven visibility, combat safety, visual feedback decoupling, code organization, and controller modifier binding implemented.
 
 ## Purpose
 A high-performance, minimalist gamepad interface. It provides the "ConsolePort feel" by handling movement and UI navigation without the overhead of heavy configuration menus or decorative UI elements.
@@ -44,6 +44,12 @@ This means code must be compatible with 12.0.1 restrictions while avoiding Retai
 - Cache hit metrics and graph reuse optimization
 - **Hijack.lua 8-section organization** ✨ - Clear code structure with section headers
 - **Comprehensive LuaDoc documentation** ✨ - All public methods fully documented
+- **Controller Modifier Binding** ✨ - Config module with AceDB/AceConfig integration
+- **CVar Protection** ✨ - Original CVar preservation with restore functionality
+- **Native Options UI** ✨ - Blizzard InterfaceOptions panel (ESC → Interface → AddOns → CPLight)
+- **Controller Modifier Binding** ✨ - Config module with AceDB/AceConfig integration
+- **CVar Protection** ✨ - Original CVar preservation with restore functionality
+- **Native Options UI** ✨ - Blizzard InterfaceOptions panel (ESC → Interface → AddOns → CPLight)
 
 ### 📋 Planned (Future Phases)
 - Navigation history (back button functionality)
@@ -86,9 +92,25 @@ This means code must be compatible with 12.0.1 restrictions while avoiding Retai
 │   - Focus management                │
 │   - Visual feedback (gauntlet)      │
 │   - Combat lockdown handling        │
+│   - CVarManager integration ✨       │
 └─────────────────┬───────────────────┘
-                  │ could use (future)
+                  │ uses
 ┌─────────────────▼───────────────────┐
+│   CVarManager ✨                     │
+│   - Modifier cache (O(1) lookup)    │
+│   - Original CVar preservation      │
+│   - Apply/Restore operations        │
+└─────────────────┬───────────────────┘
+                  │ configured by
+┌─────────────────▼───────────────────┐
+│   Options.lua ✨                     │
+│   - AceConfig options table         │
+│   - Blizzard InterfaceOptions       │
+│   - Dynamic dropdown filtering      │
+└─────────────────────────────────────┘
+
+         (Independent)
+┌─────────────────────────────────────┐
 │   Actions.lua (DISABLED)            │
 │   - Smart click detection           │
 │   - Context-aware actions           │
@@ -270,21 +292,54 @@ This means code must be compatible with 12.0.1 restrictions while avoiding Retai
     * Click handling entirely within secure context (no taint)
     * Widget ownership tracked via `owner` attribute
 * **Future Enhancement**: Could integrate with Actions.lua for smart context detection and specialized handling
-┌─────────────────────────────────────┐
-│   ConsolePortNode (External Lib)   │
-│   - Frame scanning (NODE)           │
-│   - Node validation (IsDrawn)       │
-│   - Position calculation            │
-└─────────────────┬───────────────────┘
-                  │ used by
-┌─────────────────▼───────────────────┐
-│   7. Core Systems (`Core/`)
+
+### 6. Controller Modifier Binding (`Config/`) ✨
+* **Purpose**: Allows users to map controller buttons to keyboard modifiers (Shift, Ctrl, Alt) with CVar protection
+* **Status**: ✅ Phase 5 Part 1 Complete - Production-ready with native Blizzard UI integration
+* **Functionality**:
+    * **CVar Management**: CVarManager.lua handles GamePadEmulate{Shift/Ctrl/Alt} CVars
+    * **Original State Preservation**: Saves user's pre-CPLight CVars to db.global.originalCVars on first load
+    * **Runtime Cache**: O(1) button lookups via cached modifier assignments (no GetCVar calls during navigation)
+    * **Options UI**: AceConfig-based panel in ESC → Interface → AddOns → CPLight
+    * **Dynamic Filtering**: Dropdown menus hide already-assigned buttons from other modifier dropdowns
+    * **Apply/Restore Buttons**: User can apply changes or revert to original CVars
+* **Technical Requirements**:
+    * **AceDB-3.0**: SavedVariables management with db.global and db.profile structure
+    * **AceConfig-3.0 + AceGUI-3.0**: Declarative UI generation and Blizzard InterfaceOptions integration
+    * **No Combat Operations**: CVar writes only happen out of combat via user button clicks
+    * **Cache Synchronization**: Cache refreshed after Apply/Restore operations
+* **Public API** (CVarManager):
+    * `Initialize()` - Saves original CVars on first load, initializes cache
+    * `IsModifier(button)` → boolean - O(1) cache lookup, used by Hijack during navigation
+    * `ApplyModifierBindings()` - Writes db.profile.modifiers to CVars, refreshes cache
+    * `RestoreOriginalCVars()` - Reverts CVars to pre-CPLight state from db.global.originalCVars
+    * `RefreshCache()` - Updates cache from current CVars
+    * `GetCache()` → table - Returns current cache state for UI display
+* **Hijack Integration**:
+    * `_SetupSecureWidgets()` checks `CVarManager:IsModifier(button)` before creating navigation widgets
+    * Buttons assigned as modifiers (e.g., PADLTRIGGER) are skipped for UI navigation
+    * Allows triggers/shoulders/stick clicks to function as Shift/Ctrl/Alt for action bars
+* **Allowed Controller Buttons**:
+    * PADLTRIGGER (Left Trigger)
+    * PADRTRIGGER (Right Trigger)
+    * PADLSHOULDER (Left Shoulder/Bumper)
+    * PADRSHOULDER (Right Shoulder/Bumper)
+    * PADLSTICK (Left Stick Click)
+    * PADRSTICK (Right Stick Click)
+* **Architecture Notes**:
+    * Options.lua uses AceConfig declarative option tables (not manual UIDropDownMenu code)
+    * CVarManager maintains 3-value cache: {shift, ctrl, alt} loaded on PLAYER_LOGIN
+    * Frame-based PLAYER_LOGIN handler initializes CVarManager before registering options UI
+    * No ReloadUI required for navigation changes (cache updated immediately)
+
+### 7. Core Systems (`Core/`)
 * **Core.lua**: Ace3-based addon initialization and lifecycle management
     * Global CPLight frame object (`_G.CPLight`)
     * AceAddon-3.0 setup and module system
+    * AceDB-3.0 initialization with defaults structure (db.global, db.profile)
     * Namespace data initialization (`ns.Data`)
     * CVar helper for legacy/retail compatibility
-    * SavedVariables initialization (CPLightSettings, CPLightCharacter)
+    * SavedVariables initialization (CPLightDB - replaces CPLightSettings/CPLightCharacter)
     * Module loader notification system
 * **Database.lua**: Minimal database system for CPLight
     * Module registration via `db:Register(id, obj)`
