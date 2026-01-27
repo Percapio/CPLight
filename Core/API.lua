@@ -102,11 +102,50 @@ function CPAPI.EventHandler(frame, events)
 end
 
 ---------------------------------------------------------------
--- Log function
+-- Debug Mode
+---------------------------------------------------------------
+local DebugMode = false
+
+--- Enable or disable debug logging
+--- Saves setting to SavedVariables
+---@param enabled boolean True to enable debug output
+function CPAPI.SetDebugMode(enabled)
+	DebugMode = enabled
+	
+	-- Save to database if available
+	local app = LibStub("AceAddon-3.0"):GetAddon("CPLight", true)
+	if app and app.db then
+		app.db.profile.debugMode = enabled
+	end
+	
+	if enabled then
+		print('|cff0099ffCPLight:|r Debug mode ENABLED. Debug messages will be shown.')
+	else
+		print('|cff0099ffCPLight:|r Debug mode DISABLED.')
+	end
+end
+
+--- Get current debug mode state
+---@return boolean enabled True if debug mode is enabled
+function CPAPI.GetDebugMode()
+	return DebugMode
+end
+
+---------------------------------------------------------------
+-- Log function (Production messages only)
 ---------------------------------------------------------------
 function CPAPI.Log(msg, ...)
 	if msg then
 		print('|cff0099ffCPLight:|r ' .. msg:format(...));
+	end
+end
+
+---------------------------------------------------------------
+-- Debug Log function (Development/Debug messages)
+---------------------------------------------------------------
+function CPAPI.DebugLog(msg, ...)
+	if DebugMode and msg then
+		print('|cff888888CPLight [DEBUG]:|r ' .. msg:format(...));
 	end
 end
 

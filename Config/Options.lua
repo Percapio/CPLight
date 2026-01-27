@@ -170,6 +170,27 @@ function CreateOptionsTable()
                 order = 70,
             },
             
+            -- Debug Mode
+            debugModeToggle = {
+                type = "toggle",
+                name = "Debug Mode (restart required)",
+                desc = "Enable detailed debug messages in chat. Useful for troubleshooting issues.\n\n|cffff7f00Note:|r A /reload or restart is required for this setting to take full effect.",
+                order = 75,
+                get = function()
+                    return CPAPI.GetDebugMode()
+                end,
+                set = function(info, val)
+                    CPAPI.SetDebugMode(val)
+                end,
+                width = "full",
+            },
+            
+            spacer4 = {
+                type = "description",
+                name = " ",
+                order = 77,
+            },
+            
             -- Current Status
             statusHeader = {
                 type = "header",
@@ -214,7 +235,7 @@ local function RegisterOptions()
     -- Add to Blizzard Interface Options
     AceConfigDialog:AddToBlizOptions("CPLight", "CPLight")
     
-    CPAPI.Log("Options panel registered")
+    CPAPI.DebugLog("Options panel registered")
 end
 
 ---------------------------------------------------------------

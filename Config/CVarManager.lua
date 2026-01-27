@@ -87,7 +87,7 @@ function CVarManager:Initialize()
             ctrl = ReadCVar("ctrl"),
             alt = ReadCVar("alt"),
         }
-        CPAPI.Log("CVarManager: Saved original CVars (first load)")
+        CPAPI.DebugLog("CVarManager: Saved original CVars (first load)")
     end
     
     -- Initialize profile settings if needed
@@ -102,7 +102,7 @@ function CVarManager:Initialize()
     -- Load current CVars into cache for runtime performance
     self:RefreshCache()
     
-    CPAPI.Log("CVarManager: Initialized")
+    CPAPI.DebugLog("CVarManager: Initialized")
 end
 
 ---------------------------------------------------------------
@@ -116,7 +116,7 @@ function CVarManager:RefreshCache()
     Cache.ctrl = ReadCVar("ctrl")
     Cache.alt = ReadCVar("alt")
     
-    CPAPI.Log(string.format("CVarManager: Cache refreshed - Shift=%s, Ctrl=%s, Alt=%s", 
+    CPAPI.DebugLog(string.format("CVarManager: Cache refreshed - Shift=%s, Ctrl=%s, Alt=%s", 
         Cache.shift, Cache.ctrl, Cache.alt))
 end
 
@@ -154,7 +154,7 @@ function CVarManager:ApplyModifierBindings()
     -- Update cache for runtime
     self:RefreshCache()
     
-    CPAPI.Log("CVarManager: Applied modifier bindings")
+    CPAPI.DebugLog("CVarManager: Applied modifier bindings")
     print("|cff00ff00CPLight:|r Modifier bindings applied!")
 end
 
@@ -181,7 +181,7 @@ function CVarManager:RestoreOriginalCVars()
     -- Update cache for runtime
     self:RefreshCache()
     
-    CPAPI.Log("CVarManager: Restored original CVars")
+    CPAPI.DebugLog("CVarManager: Restored original CVars")
     print("|cff00ff00CPLight:|r Original CVars restored!")
 end
 

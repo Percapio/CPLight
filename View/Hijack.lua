@@ -498,7 +498,7 @@ function Hijack:SetGauntletState(newState)
     -- Validate transition (log warning but allow for recovery)
     if currentState ~= newState then
         if not VALID_TRANSITIONS[currentState] or not VALID_TRANSITIONS[currentState][newState] then
-            CPAPI.Log('WARNING: Invalid gauntlet transition: %s → %s', currentState, newState)
+            CPAPI.DebugLog('WARNING: Invalid gauntlet transition: %s → %s', currentState, newState)
             -- Allow transition anyway (fail-open for recovery)
         end
     end
@@ -803,7 +803,7 @@ function Hijack:_CanReuseGraph(currentFrameNames)
     if self.LastGraphState.buildTime and GetTime then
         local graphAge = GetTime() - self.LastGraphState.buildTime
         if graphAge > GRAPH_STALE_THRESHOLD then
-            CPAPI.Log('ERROR: Navigation enable failed: Graph is stale (age=%d seconds)', graphAge)
+            CPAPI.DebugLog('ERROR: Navigation enable failed: Graph is stale (age=%d seconds)', graphAge)
             return false  -- Force rebuild for stale graphs
         end
     end

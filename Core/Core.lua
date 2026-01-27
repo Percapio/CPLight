@@ -63,6 +63,7 @@ local defaults = {
             ctrl = "NONE",
             alt = "NONE",
         },
+        debugMode = false,  -- Debug logging toggle
     },
 }
 
@@ -73,11 +74,17 @@ function App:OnInitialize()
     -- Initialize AceDB with SavedVariables
     self.db = LibStub("AceDB-3.0"):New("CPLightDB", defaults, true)
     
-    CPAPI.Log('System Initialized (Ace3 + AceDB).')
+    CPAPI.DebugLog('System Initialized (Ace3 + AceDB).')
 end
 
 function App:OnEnable()
     -- Triggers when player logs in
+    
+    -- Initialize debug mode from SavedVariables
+    if self.db.profile.debugMode then
+        CPAPI.SetDebugMode(true)
+    end
+    
     CPAPI.Log('System Enabled.')
     
     -- Legacy Module Loader Notification
