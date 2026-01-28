@@ -66,9 +66,10 @@ _Note: Project is 100% base feature complete. Currently, working on edge-case bu
 ## TODO:
 - ~~Ensure both primary features (movement and menu navigation) is 100% bug-free~~
 - ~~Add an action-bar button mapping menu (only button mapping, not the full ConsolePort package)~~
+- ~~keybindings show x-box controller buttons when mapped (good enough.  not sure how to map to action bars without high overhead costs)~~
 - Add some addon support:
-   * Questie
    * Immersion
+   * Questie
    * Baganator
 
 ## Credits

@@ -154,6 +154,11 @@ function CVarManager:ApplyModifierBindings()
     -- Update cache for runtime
     self:RefreshCache()
     
+    -- Update modifier icons to reflect new assignments
+    if addon.IconMapping then
+        addon.IconMapping:UpdateModifierIcons()
+    end
+    
     CPAPI.DebugLog("CVarManager: Applied modifier bindings")
     print("|cff00ff00CPLight:|r Modifier bindings applied!")
 end
@@ -180,6 +185,11 @@ function CVarManager:RestoreOriginalCVars()
     
     -- Update cache for runtime
     self:RefreshCache()
+    
+    -- Update modifier icons to reflect restored assignments
+    if addon.IconMapping then
+        addon.IconMapping:UpdateModifierIcons()
+    end
     
     CPAPI.DebugLog("CVarManager: Restored original CVars")
     print("|cff00ff00CPLight:|r Original CVars restored!")

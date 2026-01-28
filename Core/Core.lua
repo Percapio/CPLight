@@ -56,6 +56,7 @@ end
 local defaults = {
     global = {
         originalCVars = nil,  -- Saved on first load: {shift="NONE", ctrl="NONE", alt="NONE"}
+        iconsApplied = false,  -- Controller icon mapping applied (one-time)
     },
     profile = {
         modifiers = {

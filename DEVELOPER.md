@@ -193,6 +193,18 @@ CPLight is a lightweight gamepad addon for WoW TBC Anniversary (2.5.5) providing
   - Debug mode checkbox (restart required)
   - Live CVar status display
 
+#### **IconMapping.lua** (`Config/`)
+- **Purpose**: Replace keybind text with controller button icons
+- **Key APIs**:
+  - `Apply()` - One-time setup (tracked in SavedVariables)
+  - `UpdateModifierIcons()` - Dynamically updates modifier abbreviations
+  - `Restore()` - Reverts to original KEY_* strings
+- **Features**:
+  - Converts `KEY_PAD1` → `|A:Gamepad_Button_Down:16:16|t` (Blizzard atlas icons)
+  - Works with all action bar addons (Bartender, Dominos, ElvUI, default UI)
+  - Modifier icons reuse assigned controller buttons (e.g., Shift = shoulder icon if bound)
+  - Zero taint, minimal footprint, runs once on PLAYER_LOGIN
+
 #### **API.lua** (`Core/`)
 - **Purpose**: Global helper functions and version abstraction
 - **Key APIs**:
