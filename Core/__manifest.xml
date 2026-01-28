@@ -2,5 +2,4 @@
 	<Include file="API.lua"/>
 	<Include file="Core.lua"/>
 	<Include file="Database.lua"/>
-	<Include file="Stubs.lua"/>
 </Ui>

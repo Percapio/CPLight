@@ -48,6 +48,14 @@ Hijack.RebuildState = {
 ---------------------------------------------------------------
 -- Consolidated list of all navigable frames
 -- Hooks are registered lazily when frames first appear (eliminates race conditions)
+
+---------------------------------------------------------------
+-- Hook Generation Counter (Memory Leak Prevention)
+---------------------------------------------------------------
+-- Global counter incremented each time hooks are registered
+-- Prevents accumulation of stale hook closures over time
+local HookGeneration = 0
+
 local FRAMES = {
     -- Player Info
     "CharacterFrame", "SpellBookFrame", "PlayerTalentFrame",
@@ -627,20 +635,27 @@ function Hijack:_RegisterVisibilityHooks()
     for _, frameName in ipairs(FRAMES) do
         local frame = _G[frameName]
         if frame and not frame.CPLight_HooksRegistered then
+            -- Increment generation counter for new hook registration batch
+            HookGeneration = HookGeneration + 1
+            local currentGeneration = HookGeneration
+            
             -- Use HookScript to avoid overwriting existing handlers
             frame:HookScript('OnShow', function()
-                if not InCombatLockdown() then
+                -- Only execute if this is the current generation (prevents stale hooks)
+                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
                     RequestGraphRebuild()
                 end
             end)
             
             frame:HookScript('OnHide', function()
-                if not InCombatLockdown() then
+                -- Only execute if this is the current generation (prevents stale hooks)
+                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
                     RequestGraphRebuild()
                 end
             end)
             
             frame.CPLight_HooksRegistered = true
+            frame.CPLight_HookGeneration = currentGeneration
             hooksRegistered = hooksRegistered + 1
         end
     end
@@ -655,20 +670,27 @@ function Hijack:_UpdateFrameRegistry()
     for _, frameName in ipairs(FRAMES) do
         local frame = _G[frameName]
         if frame and not frame.CPLight_HooksRegistered then
+            -- Increment generation counter for new hook registration batch
+            HookGeneration = HookGeneration + 1
+            local currentGeneration = HookGeneration
+            
             -- Hook newly-available frame
             frame:HookScript('OnShow', function()
-                if not InCombatLockdown() then
+                -- Only execute if this is the current generation (prevents stale hooks)
+                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
                     RequestGraphRebuild()
                 end
             end)
             
             frame:HookScript('OnHide', function()
-                if not InCombatLockdown() then
+                -- Only execute if this is the current generation (prevents stale hooks)
+                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
                     RequestGraphRebuild()
                 end
             end)
             
             frame.CPLight_HooksRegistered = true
+            frame.CPLight_HookGeneration = currentGeneration
         end
     end
 end
@@ -726,25 +748,25 @@ end
 -- Fallback Polling (Safety Net)
 ---------------------------------------------------------------
 -- Slow polling at 1-second intervals to catch edge cases where events don't fire
-local VisibilityChecker = CreateFrame("Frame")
-VisibilityChecker.timer = 0
-VisibilityChecker:SetScript("OnUpdate", function(self, elapsed)
-    -- Skip checks during combat
-    if InCombatLockdown() then return end
+-- local VisibilityChecker = CreateFrame("Frame")
+-- VisibilityChecker.timer = 0
+-- VisibilityChecker:SetScript("OnUpdate", function(self, elapsed)
+--     -- Skip checks during combat
+--     if InCombatLockdown() then return end
     
-    -- Only check every 1 second (fallback, not primary mechanism)
-    self.timer = self.timer + elapsed
-    if self.timer < 1.0 then return end
-    self.timer = 0
+--     -- Only check every 1 second (fallback, not primary mechanism)
+--     self.timer = self.timer + elapsed
+--     if self.timer < 1.0 then return end
+--     self.timer = 0
     
-    -- Check for stale node (current node became invisible)
-    if Hijack.IsActive and Hijack.CurrentNode then
-        if not Hijack.CurrentNode:IsVisible() then
-            NavGraph:InvalidateGraph()
-            RequestGraphRebuild()
-        end
-    end
-end)
+--     -- Check for stale node (current node became invisible)
+--     if Hijack.IsActive and Hijack.CurrentNode then
+--         if not Hijack.CurrentNode:IsVisible() then
+--             NavGraph:InvalidateGraph()
+--             RequestGraphRebuild()
+--         end
+--     end
+-- end)
 
 ---------------------------------------------------------------
 -- SECTION 4: Widget & Binding Management
@@ -828,19 +850,26 @@ function Hijack:_CollectVisibleFrames()
             -- Lazy hook registration: hook frames that weren't available at startup
             -- Fixes race conditions with late-loaded addons and on-demand frames
             if not frame.CPLight_HooksRegistered then
+                -- Increment generation counter for new hook registration batch
+                HookGeneration = HookGeneration + 1
+                local currentGeneration = HookGeneration
+                
                 frame:HookScript('OnShow', function()
-                    if not InCombatLockdown() then
+                    -- Only execute if this is the current generation (prevents stale hooks)
+                    if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
                         RequestGraphRebuild()
                     end
                 end)
                 
                 frame:HookScript('OnHide', function()
-                    if not InCombatLockdown() then
+                    -- Only execute if this is the current generation (prevents stale hooks)
+                    if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
                         RequestGraphRebuild()
                     end
                 end)
                 
                 frame.CPLight_HooksRegistered = true
+                frame.CPLight_HookGeneration = currentGeneration
             end
             
             if frame:IsVisible() and frame:GetAlpha() > 0 then
@@ -1256,7 +1285,7 @@ function Hijack:OnEnable()
     self:_CheckInitialVisibility()
     
     -- Start fallback polling (safety net)
-    VisibilityChecker:Show()
+    -- VisibilityChecker:Show()
     
 end
 
@@ -1265,7 +1294,7 @@ end
 ---@public
 function Hijack:OnDisable()
     self:DisableNavigation()
-    VisibilityChecker:Hide()
+    -- VisibilityChecker:Hide()
     self.RebuildState.hooksRegistered = false
 end
 

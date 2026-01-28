@@ -297,7 +297,28 @@ end
 
 ---Mark graph as stale, will rebuild on next access
 function NavigationGraph:InvalidateGraph()
-	-- Clear all graph data to prevent memory leaks from stale cache references
+	-- Explicitly nil out frame references to help garbage collection
+	-- This prevents memory leaks from stale cache references
+	for index, cacheItem in ipairs(graph.nodeCacheItems) do
+		if cacheItem then
+			cacheItem.node = nil
+			cacheItem.super = nil
+			cacheItem.x = nil
+			cacheItem.y = nil
+		end
+	end
+	
+	-- Clear nodeToIndex map (frame -> index mappings)
+	for node, index in pairs(graph.nodeToIndex) do
+		graph.nodeToIndex[node] = nil
+	end
+	
+	-- Clear edges table
+	for index, edges in pairs(graph.edges) do
+		graph.edges[index] = nil
+	end
+	
+	-- Clear all graph data arrays
 	graph.nodeCacheItems = {}
 	graph.nodeToIndex = {}
 	graph.edges = {}
