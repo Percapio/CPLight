@@ -64,13 +64,14 @@ _Note: Project is 100% base feature complete. Currently, working on edge-case bu
 - Blizzard API restrictions.  There's probably a work-around for it, but (at the moment) I don't see that its worth the effort to implement.
 
 ## TODO:
-- ~~Ensure both primary features (movement and menu navigation) is 100% bug-free~~
-- ~~Add an action-bar button mapping menu (only button mapping, not the full ConsolePort package)~~
-- ~~keybindings show x-box controller buttons when mapped (good enough.  not sure how to map to action bars without high overhead costs)~~
+- [x] Ensure both primary features (movement and menu navigation) is 100% bug-free
+- [x] Add an action-bar button mapping menu (only button mapping, not the full ConsolePort package)
+- [x] keybindings show x-box controller buttons when mapped (good enough.  not sure how to map to action bars without high overhead costs)
 - Add some addon support:
-   * Immersion (requires an external module to be built)
-   * Questie (requires an external module to be built)
-   * Baganator
+   * ~~Immersion~~ (requires an external module to be built)
+   * ~~Questie~~ (requires an external module to be built)
+   * [x] Baganator
+   * [x] Bagnon
 
 ## Credits
 

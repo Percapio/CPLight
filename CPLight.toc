@@ -6,6 +6,7 @@
 ## IconTexture: Interface\Icons\spell_holy_prayerofmending
 ## License: MIT
 
+
 ## SavedVariables: CPLightDB
 ## SavedVariablesPerCharacter: CPLightCharDB
 
@@ -18,7 +19,6 @@ Libs\Ace3\AceConfig-3.0\AceConfig-3.0.xml
 Libs\ConsolePortNode\ConsolePortNode.lua
 
 TOCversion.lua
-Templates\Cursor.xml
 
 Core\__manifest.xml
 

@@ -71,13 +71,56 @@ local FRAMES = {
     "ContainerFrame9", "ContainerFrame10", "ContainerFrame11", "ContainerFrame12",
     "ContainerFrame13",
     -- Management & Settings
-    "GameMenuFrame", "InterfaceOptionsFrame", "VideoOptionsFrame",
+    "GameMenuFrame", "InterfaceOptionsFrame", "VideoOptionsFrame","SettingsPanel",
     "AudioOptionsFrame", "KeyBindingFrame", "MacroFrame", "AddonList",
     -- Popups/Dialogs
     "StaticPopup1", "StaticPopup2", "StaticPopup3", "StaticPopup4", "ItemRefTooltip",
     -- Late-Loaded Addon Frames (hooked lazily when they first appear)
-    "TradeSkillFrame", "InspectFrame",
+    "TradeSkillFrame", "InspectFrame"
 }
+
+---------------------------------------------------------------
+-- Addon Frame Registry (Event-Driven Detection)
+---------------------------------------------------------------
+-- Maps addon names to their navigable frame names
+-- Frames are added to FRAMES table dynamically when addon is detected
+local ADDON_FRAMES = {
+    Bagnon = {
+        "BagnonInventory1",
+    },
+    Baganator = {
+        "Baganator_CategoryViewBackpackViewFrameblizzard",
+    },
+}
+
+---------------------------------------------------------------
+-- Addon Frame Registration (Shared Logic)
+---------------------------------------------------------------
+-- Registers addon frames to the FRAMES table
+-- Used by both ADDON_LOADED (late arrivals) and PLAYER_LOGIN (early birds)
+local function RegisterAddonFrames(addonName)
+    if not ADDON_FRAMES[addonName] then
+        return
+    end
+    
+    CPAPI.DebugLog('Detected bag addon: %s', addonName)
+    
+    -- Add addon frames to FRAMES registry (avoid duplicates)
+    for _, frameName in ipairs(ADDON_FRAMES[addonName]) do
+        local alreadyExists = false
+        for _, existingFrame in ipairs(FRAMES) do
+            if existingFrame == frameName then
+                alreadyExists = true
+                break
+            end
+        end
+        
+        if not alreadyExists then
+            table.insert(FRAMES, frameName)
+            CPAPI.DebugLog('Registered %s -> %s', addonName, frameName)
+        end
+    end
+end
 
 ---------------------------------------------------------------
 -- SECTION 2: Driver Frame & State Management
@@ -404,18 +447,32 @@ end
 -- SECTION 5: Visual Feedback (Gauntlet & Tooltips)
 ---------------------------------------------------------------
 
----Hide the tooltip only if we own it or it's orphaned
----Prevents hiding tooltips from other addons or user interactions
+---Hide the tooltip only if we own it, it's orphaned, or the owner is no longer visible
+---Prevents hiding tooltips from other addons or active user interactions
 ---@public
 function Hijack:HideTooltip()
     if not GameTooltip:IsShown() then
         return
     end
     
-    -- Only hide tooltips we own or orphaned tooltips (no owner / UIParent)
     local owner = GameTooltip:GetOwner()
-    if owner == self.CurrentNode or owner == UIParent or not owner then
+    
+    -- Hide if we own it
+    if owner == self.CurrentNode then
         GameTooltip:Hide()
+        return
+    end
+    
+    -- Hide if owner is no longer visible (ghost tooltip detection)
+    if owner and not owner:IsVisible() then
+        GameTooltip:Hide()
+        return
+    end
+    
+    -- Hide if tooltip is orphaned (no owner)
+    if not owner then
+        GameTooltip:Hide()
+        return
     end
 end
 
@@ -1236,6 +1293,11 @@ function Hijack:DisableNavigation()
     -- Hide tooltip using centralized method with ownership validation
     self:HideTooltip()
     
+    -- Extra ghost tooltip clear (ensures cleanup even if owner checks fail)
+    if GameTooltip:IsShown() and GameTooltip:GetOwner() == self.CurrentNode then
+        GameTooltip:Hide()
+    end
+    
     -- Clear state
     self.CurrentNode = nil
     
@@ -1268,6 +1330,73 @@ end
 -- SECTION 8: Module Lifecycle
 ---------------------------------------------------------------
 
+---Set up ghost tooltip clearing hooks for major UI close events
+---Prevents tooltips from persisting after frames close (especially late-loaded UIs)
+---@private
+function Hijack:_SetupGhostTooltipClearing()
+    local function ClearGhostTooltip()
+        if not GameTooltip:IsShown() then
+            return
+        end
+        
+        local owner = GameTooltip:GetOwner()
+        
+        -- Clear if owner is invisible (ghost tooltip)
+        if owner and not owner:IsVisible() then
+            GameTooltip:Hide()
+            return
+        end
+        
+        -- Clear if tooltip is orphaned
+        if not owner then
+            GameTooltip:Hide()
+            return
+        end
+    end
+    
+    -- Hook major panel close events
+    hooksecurefunc("HideUIPanel", ClearGhostTooltip)
+    hooksecurefunc("CloseAllWindows", ClearGhostTooltip)
+    
+    -- Specifically hook late-loaded frames that cause ghost tooltips
+    if WorldMapFrame then
+        WorldMapFrame:HookScript("OnHide", ClearGhostTooltip)
+    end
+    
+    if TradeFrame then
+        TradeFrame:HookScript("OnHide", ClearGhostTooltip)
+    end
+    
+    -- Hook TradeSkillFrame if it exists (late-loaded)
+    if TradeSkillFrame then
+        TradeSkillFrame:HookScript("OnHide", ClearGhostTooltip)
+    end
+    
+    CPAPI.DebugLog('Ghost tooltip clearing hooks registered')
+end
+
+---Handle addon loaded events to detect bag addons (Late Arrivals)
+---Dynamically adds addon frames to the FRAMES registry
+---@param event string Event name (ADDON_LOADED)
+---@param addonName string Name of the addon that was loaded
+---@private
+function Hijack:ADDON_LOADED(event, addonName)
+    RegisterAddonFrames(addonName)
+end
+
+---Handle player login to detect already-loaded bag addons (Early Birds)
+---Checks for addons that loaded before CPLight (via OptionalDeps)
+---@param event string Event name (PLAYER_LOGIN)
+---@private
+function Hijack:PLAYER_LOGIN(event)
+    -- Check all supported addons to see if they're already loaded
+    for supportedAddon, _ in pairs(ADDON_FRAMES) do
+        if C_AddOns.IsAddOnLoaded(supportedAddon) then
+            RegisterAddonFrames(supportedAddon)
+        end
+    end
+end
+
 ---Initialize the Hijack module on addon enable
 ---Sets up gauntlet, registers visibility hooks and events, starts polling
 ---@public
@@ -1276,6 +1405,13 @@ function Hijack:OnEnable()
     CVarManager = addon.CVarManager or _G.CPLightCVarManager
     
     self:CreateGauntlet()
+    
+    -- Register addon detection for bag addons
+    self:RegisterEvent('ADDON_LOADED')  -- Late arrivals (load after us)
+    self:RegisterEvent('PLAYER_LOGIN')   -- Early birds (loaded before us via OptionalDeps)
+    
+    -- Set up ghost tooltip clearing hooks
+    self:_SetupGhostTooltipClearing()
     
     -- Register event-driven visibility detection
     self:_RegisterVisibilityHooks()

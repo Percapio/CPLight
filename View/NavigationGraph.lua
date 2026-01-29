@@ -348,18 +348,25 @@ end
 function NavigationGraph:ValidateNode(node, cacheItem)
 	if not node then return false end
 	
-	-- Quick visibility check
+	-- Quick visibility check (Base Blizzard API)
 	if not node:IsVisible() then return false end
 	
 	-- Use NODE library for deeper validation if available
 	local NODE = LibStub('ConsolePortNode')
 	if NODE then
 		if not NODE.IsRelevant(node) then return false end
+		
 		if cacheItem then
-			-- Use super from cacheItem if available, otherwise fallback to parent
+			-- Get the parent (super)
 			local super = cacheItem.super or (node.GetParent and node:GetParent())
+			
+			-- FIX: Only run IsDrawn if the parent actually has a size.
+			-- If super is a 0x0 layout frame, IsDrawn will falsely fail.
 			if super and NODE.IsDrawn then
-				if not NODE.IsDrawn(node, super) then return false end
+				local pWidth, pHeight = super:GetWidth(), super:GetHeight()
+				if pWidth and pWidth > 0 and pHeight and pHeight > 0 then
+					if not NODE.IsDrawn(node, super) then return false end
+				end
 			end
 		end
 	end
