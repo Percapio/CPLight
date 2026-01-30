@@ -65,6 +65,7 @@ local FRAMES = {
     -- Interaction
     "GossipFrame", "QuestFrame", "MerchantFrame", "TaxiFrame", "ClassTrainerFrame",
     "QuestLogFrame", "TradeFrame", "BankFrame", "AuctionFrame", "MailFrame",
+    "InboxFrame", "SendMailFrame", "OpenMailFrame",
     -- Inventory (Bags 0-12)
     "ContainerFrame1", "ContainerFrame2", "ContainerFrame3", "ContainerFrame4",
     "ContainerFrame5", "ContainerFrame6", "ContainerFrame7", "ContainerFrame8",
@@ -316,6 +317,14 @@ function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
 				NavGraph:InvalidateGraph()
 			end
 		end
+	end
+	
+	-- FINAL FALLBACK: Relaxed directional search
+	-- When strict edges and NODE navigation both fail, try relaxed search
+	-- This handles edge cases like MailFrame where tabs are arranged unusually
+	local relaxedIndex = NavGraph:FindNodeInRelaxedDirection(currentIndex, direction)
+	if relaxedIndex then
+		return relaxedIndex
 	end
 	
 	return nil

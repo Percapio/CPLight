@@ -107,7 +107,9 @@ CPLight is a lightweight gamepad addon for WoW TBC Anniversary (2.5.5) providing
          │
          ├─▶ GetTargetNodeInDirection(currentIndex, "up")
          │        │
-         │        └─▶ NavigationGraph:GetNodeEdges(index).up
+         │        ├─▶ Try: Strict edges (pre-calculated graph)
+         │        ├─▶ Fallback: NODE.NavigateToBestCandidateV3 (real-time)
+         │        └─▶ Final fallback: Relaxed directional search
          │
          ├─▶ ValidateNodeFocus(targetNode) ──✗── Skip to next
          │
@@ -158,23 +160,35 @@ CPLight is a lightweight gamepad addon for WoW TBC Anniversary (2.5.5) providing
 - **Purpose**: D-pad navigation orchestrator
 - **Key APIs**:
   - `EnableNavigation()` / `DisableNavigation()`
-  - `Navigate(direction)` - Routes D-pad input to graph
+  - `Navigate(direction)` - Routes D-pad input to graph (3-tier fallback strategy)
+  - `RefreshNavigation()` - Rebuilds graph and restores focus to nearest node
   - `SetFocus(node)` - Updates current focus + visual feedback
   - `IsModifier(button)` - Checks if button assigned to Shift/Ctrl/Alt
 - **Events**: 
   - `OnShow/OnHide` hooks (event-driven frame detection)
-  - `BAG_UPDATE` (rebuilds graph when items change)
-  - `ADDON_LOADED` (catches late-loaded Blizzard UIs)
+  - `BAG_UPDATE_DELAYED` (rebuilds graph when items change, auto-debounced)
+  - `ADDON_LOADED` (catches late-loaded Blizzard UIs and bag addons)
   - `PLAYER_REGEN_DISABLED/ENABLED` (combat safety)
+- **Navigation Fallback Chain**:
+  1. Strict pre-calculated edges (fast, predictable)
+  2. NODE library real-time navigation (smart, handles dynamic layouts)
+  3. Relaxed directional search (handles edge cases like MailFrame, addon UIs)
 
 #### **NavigationGraph.lua** (`View/`)
 - **Purpose**: Pre-calculated navigation graph builder
 - **Key APIs**:
   - `BuildGraph(frames)` - Scans frames via NODE(), calculates edges
   - `GetNodeEdges(index)` → `{up, down, left, right}`
+  - `GetValidatedNodeEdges(index)` - Real-time validation of edges
+  - `GetClosestNodeToPosition(x, y)` - Find nearest node to coordinates
+  - `FindNodeInRelaxedDirection(index, direction)` - Relaxed directional search
   - `NodeToIndex(node)` / `IndexToNode(index)` - Bidirectional mapping
   - `InvalidateGraph()` - Forces rebuild on next access
 - **Performance**: Builds in <50ms, reuses when frame state unchanged
+- **Smart Recovery**: 
+  - Detects stale nodes (deleted bag items) and auto-rebuilds
+  - Restores focus to nearest valid node when current node disappears
+  - Relaxed fallback handles unusual frame layouts (MailFrame tabs, addon UIs)
 
 #### **CVarManager.lua** (`Config/`)
 - **Purpose**: Controller button → keyboard modifier mapping
@@ -208,11 +222,12 @@ CPLight is a lightweight gamepad addon for WoW TBC Anniversary (2.5.5) providing
 #### **API.lua** (`Core/`)
 - **Purpose**: Global helper functions and version abstraction
 - **Key APIs**:
-  - `CPAPI.SetCursor(x, y)` → `C_Cursor.SetCursorPosition()`
-  - `CPAPI.GetMouseFocus()` → `GetMouseFoci()[1]`
+  - `CPAPI.CreateEventHandler()` - Event-driven frame creation
+  - `CPAPI.RegisterFrameForUnitEvents()` - Unit event registration
   - `CPAPI.Log(msg)` - Production user messages
   - `CPAPI.DebugLog(msg)` - Debug messages (opt-in via checkbox)
-  - `CPAPI.SetDebugMode(enabled)` - Toggle debug output
+  - `CPAPI.SetDebugMode(enabled)` / `GetDebugMode()` - Toggle debug output
+- **Note**: Cleaned of legacy ConsolePort functions; contains only actively used APIs
 
 ---
 
@@ -247,10 +262,12 @@ Actions.lua (currently disabled) provides button type detection:
 - Integrate by calling from `_ConfigureWidgetsForNode()` in Hijack.lua
 
 ### 5. **Add Support for Addon UIs**
-For custom addon frames (e.g., Questie, Immersion):
-1. Add frame names to `FRAMES` registry
-2. Register `OnShow/OnHide` hooks in `_RegisterVisibilityHooks()`
+For custom addon frames (e.g., Questie, Immersion, Bagnon, Baganator):
+1. Add addon name and frame names to `ADDON_FRAMES` registry in Hijack.lua
+2. Frames are auto-detected on ADDON_LOADED and PLAYER_LOGIN events
 3. Ensure frames have clickable child widgets detectable by NODE()
+4. BAG_UPDATE_DELAYED handles dynamic content (items deleted/sold)
+5. Relaxed fallback navigation handles unusual layouts automatically
 
 ---
 
@@ -290,9 +307,11 @@ Two methods:
 
 ### Common Issues
 1. **Navigation stops working**: Check `InCombatLockdown()` - automatic recovery on combat end
-2. **Graph not updating**: BAG_UPDATE event triggers rebuild; verify hooks registered
-3. **Buttons don't respond**: Check if assigned as modifiers via CVarManager
-4. **Memory leaks**: Verify tooltips hidden on navigation disable, hooks not duplicated
+2. **Graph not updating**: BAG_UPDATE_DELAYED event triggers rebuild; verify hooks registered
+3. **Stale node errors**: RefreshNavigation() auto-detects and rebuilds; check debug logs
+4. **Can't navigate to certain buttons**: Relaxed fallback should handle; verify node visibility
+5. **Buttons don't respond**: Check if assigned as modifiers via CVarManager
+6. **Memory leaks**: Verify tooltips hidden on navigation disable, hooks not duplicated
 
 ---
 

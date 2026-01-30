@@ -501,6 +501,147 @@ function NavigationGraph:GetClosestNodeToPosition(targetX, targetY)
 	return closestIndex
 end
 
+---Find a node in a relaxed directional search (fallback when strict edges fail)
+---Searches for any node in the general direction, prioritizing by distance
+---@param currentIndex number Current node index
+---@param direction string Direction to search (UP, DOWN, LEFT, RIGHT)
+---@return number|nil targetIndex Index of best node in direction, or nil
+function NavigationGraph:FindNodeInRelaxedDirection(currentIndex, direction)
+	if not currentIndex or not direction then
+		return nil
+	end
+	
+	local currentItem = graph.nodeCacheItems[currentIndex]
+	if not currentItem or not currentItem.x or not currentItem.y then
+		return nil
+	end
+	
+	local currentX, currentY = currentItem.x, currentItem.y
+	local bestIndex = nil
+	local bestDistance = math.huge
+	
+	local dirUpper = direction:upper()
+	
+	-- Search all nodes for candidates in the general direction
+	for index, cacheItem in ipairs(graph.nodeCacheItems) do
+		if index ~= currentIndex and cacheItem and cacheItem.node then
+			-- Validate node is still visible
+			if self:ValidateNode(cacheItem.node, cacheItem) then
+				local nodeX, nodeY = cacheItem.x, cacheItem.y
+				
+				if nodeX and nodeY then
+					local isCandidate = false
+					local primaryDistance = 0
+					
+					-- Check if node is in the general direction
+					if dirUpper == 'RIGHT' then
+						if nodeX > currentX then
+							isCandidate = true
+							primaryDistance = nodeX - currentX  -- Horizontal distance
+						end
+					elseif dirUpper == 'LEFT' then
+						if nodeX < currentX then
+							isCandidate = true
+							primaryDistance = currentX - nodeX
+						end
+					elseif dirUpper == 'DOWN' then
+						if nodeY < currentY then
+							isCandidate = true
+							primaryDistance = currentY - nodeY  -- Vertical distance
+						end
+					elseif dirUpper == 'UP' then
+						if nodeY > currentY then
+							isCandidate = true
+							primaryDistance = nodeY - currentY
+						end
+					end
+					
+					if isCandidate then
+						-- Use full euclidean distance for comparison (but prioritize primary axis)
+						local dx = nodeX - currentX
+						local dy = nodeY - currentY
+						local totalDistance = (dx * dx) + (dy * dy)
+						
+						if totalDistance < bestDistance then
+							bestDistance = totalDistance
+							bestIndex = index
+						end
+					end
+				end
+			end
+		end
+	end
+	
+	return bestIndex
+end
+---Find a node in a relaxed directional search (fallback when strict edges fail)
+---Searches for any node in the general direction, prioritizing by distance
+---@param currentIndex number Current node index
+---@param direction string Direction to search (UP, DOWN, LEFT, RIGHT)
+---@return number|nil targetIndex Index of best node in direction, or nil
+function NavigationGraph:FindNodeInRelaxedDirection(currentIndex, direction)
+	if not currentIndex or not direction then
+		return nil
+	end
+	
+	local currentItem = graph.nodeCacheItems[currentIndex]
+	if not currentItem or not currentItem.x or not currentItem.y then
+		return nil
+	end
+	
+	local currentX, currentY = currentItem.x, currentItem.y
+	local bestIndex = nil
+	local bestDistance = math.huge
+	
+	local dirUpper = direction:upper()
+	
+	-- Search all nodes for candidates in the general direction
+	for index, cacheItem in ipairs(graph.nodeCacheItems) do
+		if index ~= currentIndex and cacheItem and cacheItem.node then
+			-- Validate node is still visible
+			if self:ValidateNode(cacheItem.node, cacheItem) then
+				local nodeX, nodeY = cacheItem.x, cacheItem.y
+				
+				if nodeX and nodeY then
+					local isCandidate = false
+					
+					-- Check if node is in the general direction
+					if dirUpper == 'RIGHT' then
+						if nodeX > currentX then
+							isCandidate = true
+						end
+					elseif dirUpper == 'LEFT' then
+						if nodeX < currentX then
+							isCandidate = true
+						end
+					elseif dirUpper == 'DOWN' then
+						if nodeY < currentY then
+							isCandidate = true
+						end
+					elseif dirUpper == 'UP' then
+						if nodeY > currentY then
+							isCandidate = true
+						end
+					end
+					
+					if isCandidate then
+						-- Use full euclidean distance for comparison
+						local dx = nodeX - currentX
+						local dy = nodeY - currentY
+						local totalDistance = (dx * dx) + (dy * dy)
+						
+						if totalDistance < bestDistance then
+							bestDistance = totalDistance
+							bestIndex = index
+						end
+					end
+				end
+			end
+		end
+	end
+	
+	return bestIndex
+end
 ---------------------------------------------------------------
 -- Secure Attribute Export
 ---------------------------------------------------------------
