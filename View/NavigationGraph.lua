@@ -459,6 +459,48 @@ function NavigationGraph:GetFirstNodeIndex()
 	return nil
 end
 
+---Find the closest node to a target position
+---@param targetX number Target X coordinate (scaled)
+---@param targetY number Target Y coordinate (scaled)
+---@return number|nil closestIndex Index of closest node, or nil if no nodes
+function NavigationGraph:GetClosestNodeToPosition(targetX, targetY)
+	if not targetX or not targetY then
+		return nil
+	end
+	
+	if #graph.nodeCacheItems == 0 then
+		return nil
+	end
+	
+	local closestIndex = nil
+	local minDistanceSquared = math.huge
+	
+	-- Iterate through all nodes and find the closest one
+	for index, cacheItem in ipairs(graph.nodeCacheItems) do
+		if cacheItem and cacheItem.node then
+			-- Validate node is still visible
+			if self:ValidateNode(cacheItem.node, cacheItem) then
+				-- Use cached position (already scaled)
+				local nodeX, nodeY = cacheItem.x, cacheItem.y
+				
+				if nodeX and nodeY then
+					-- Calculate distance squared (no need for sqrt, just comparing)
+					local dx = targetX - nodeX
+					local dy = targetY - nodeY
+					local distSquared = (dx * dx) + (dy * dy)
+					
+					if distSquared < minDistanceSquared then
+						minDistanceSquared = distSquared
+						closestIndex = index
+					end
+				end
+			end
+		end
+	end
+	
+	return closestIndex
+end
+
 ---------------------------------------------------------------
 -- Secure Attribute Export
 ---------------------------------------------------------------

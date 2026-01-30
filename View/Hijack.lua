@@ -63,7 +63,7 @@ local FRAMES = {
     -- Social & World
     "FriendsFrame", "GuildFrame", "WhoFrame", "WorldMapFrame", "LFGParentFrame",
     -- Interaction
-    "GossipFrame", "QuestFrame", "MerchantFrame", "TaxiFrame",
+    "GossipFrame", "QuestFrame", "MerchantFrame", "TaxiFrame", "ClassTrainerFrame",
     "QuestLogFrame", "TradeFrame", "BankFrame", "AuctionFrame", "MailFrame",
     -- Inventory (Bags 0-12)
     "ContainerFrame1", "ContainerFrame2", "ContainerFrame3", "ContainerFrame4",
@@ -1222,8 +1222,17 @@ function Hijack:RefreshNavigation()
         return false
     end
     
-    -- Save current node for restoration attempt (may be stale)
+    -- Save current node and its position for restoration attempt
     local previousNode = self.CurrentNode
+    local previousX, previousY = nil, nil
+    
+    -- Get position of current node before it becomes stale
+    if previousNode then
+        local nodeValid = pcall(function() return previousNode:IsVisible() end)
+        if nodeValid and NODE and NODE.GetCenterScaled then
+            previousX, previousY = NODE.GetCenterScaled(previousNode)
+        end
+    end
     
     -- Invalidate graph immediately to prevent stale node access
     if NavGraph then
@@ -1244,7 +1253,8 @@ function Hijack:RefreshNavigation()
         
         if success and previousNode then
             -- Try to restore focus to previous node if it's still valid
-            if previousNode:IsVisible() then
+            local nodeValid = pcall(function() return previousNode:IsVisible() end)
+            if nodeValid and previousNode:IsVisible() then
                 local restoredIndex = NavGraph:NodeToIndex(previousNode)
                 if restoredIndex then
                     -- Previous node still exists in new graph - restore focus
@@ -1252,7 +1262,20 @@ function Hijack:RefreshNavigation()
                     return
                 end
             end
-            -- Previous node no longer valid - focus is already set to first node by EnableNavigation
+            
+            -- Previous node is gone - find closest node to where it was
+            if previousX and previousY and NavGraph then
+                local closestIndex = NavGraph:GetClosestNodeToPosition(previousX, previousY)
+                if closestIndex then
+                    local closestNode = NavGraph:IndexToNode(closestIndex)
+                    if closestNode then
+                        self:SetFocus(closestNode)
+                        return
+                    end
+                end
+            end
+            
+            -- Fallback: focus is already set to first node by EnableNavigation
         end
     end)
     
