@@ -22,9 +22,7 @@
         "UIParent",
         "_G",
         "SecureHandlerStateTemplate",
-        "RegisterStateDriver",
-        "WorldMapFrame",
-        "TradeFrame"
+        "ExtraActionButton1"
     ],
     "Lua.diagnostics.globals": [
         "CPLight", "db", "CPAPI", "UIParent", "_G", "SecureHandlerStateTemplate"

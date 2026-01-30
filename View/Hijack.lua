@@ -283,6 +283,14 @@ function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
 		local currentCacheItem = graphData.nodeCacheItems[currentIndex]
 		
 		if currentNode and currentCacheItem then
+			-- Validate node is still accessible before calculating position
+			local nodeValid = pcall(function() return currentNode:IsVisible() end)
+			if not nodeValid then
+				-- Node is stale, invalidate graph
+				NavGraph:InvalidateGraph()
+				return nil
+			end
+			
 			-- Recalculate current position for accuracy
 			local x, y = NavGraph:GetNodePosition(currentIndex)
 			
@@ -321,9 +329,14 @@ function Hijack:Navigate(direction)
     -- Validate navigation state
     local currentIndex = self:_ValidateNavigationState()
     if not currentIndex then
+        -- Current node is invalid - try to recover by requesting rebuild
+        if self.IsActive and NavGraph then
+            -- Request rebuild instead of trying to recover from stale graph
+            NavGraph:InvalidateGraph()
+            RequestGraphRebuild()
+        end
         return
     end
-    
     
     -- Get target node in direction
     local targetIndex = self:_GetTargetNodeInDirection(currentIndex, direction)
@@ -331,10 +344,18 @@ function Hijack:Navigate(direction)
         return
     end
     
-    -- Focus on target node
+    -- Validate target node before focusing
     local targetNode = NavGraph:IndexToNode(targetIndex)
     if targetNode then
-        self:SetFocus(targetNode)
+        -- Extra validation: ensure node is still accessible
+        local nodeValid = pcall(function() return targetNode:IsVisible() end)
+        if nodeValid then
+            self:SetFocus(targetNode)
+        else
+            -- Target node is stale, invalidate graph
+            NavGraph:InvalidateGraph()
+            RequestGraphRebuild()
+        end
     end
 end
 
@@ -356,6 +377,13 @@ function Hijack:_ValidateNodeFocus(node)
     end
     
     if not node.IsVisible then
+        return false
+    end
+    
+    -- Check if node is still visible (catches deleted bag items)
+    local isVisible = pcall(function() return node:IsVisible() end)
+    if not isVisible then
+        -- Node reference is completely stale (frame destroyed)
         return false
     end
     
@@ -537,6 +565,10 @@ end
 
 function Hijack:UpdateGauntletPosition(node)
     if not self.Gauntlet or not node then return end
+    
+    -- Validate node is still accessible before getting position
+    local nodeValid = pcall(function() return node:IsVisible() end)
+    if not nodeValid then return end
     
     -- Ensure gauntlet is in valid visible state (recovery from hidden state)
     if self.GauntletState == GAUNTLET_STATE.HIDDEN then
@@ -754,13 +786,38 @@ end
 
 
 
+---Check if any registered bag addon frames are currently visible
+---@return boolean True if any bag addon frame is visible
+---@private
+function Hijack:_IsAnyBagAddonVisible()
+    -- Check all frames in ADDON_FRAMES registry
+    for addonName, frameNames in pairs(ADDON_FRAMES) do
+        for _, frameName in ipairs(frameNames) do
+            local frame = _G[frameName]
+            if frame and frame.IsVisible and frame:IsVisible() then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 ---Register game events for dynamic content changes
 ---@private
 function Hijack:_RegisterGameEvents()
-    -- BAG_UPDATE fires when bag contents change (items added/removed)
-    self:RegisterEvent('BAG_UPDATE', function()
+    -- BAG_UPDATE_DELAYED fires when bag contents change (debounced by Blizzard)
+    -- This prevents rebuild storms when multiple items are moved/deleted at once
+    self:RegisterEvent('BAG_UPDATE_DELAYED', function()
         if not InCombatLockdown() and Hijack.IsActive and NavGraph then
-            RequestGraphRebuild()
+            -- Check if any bag addon frames are visible
+            local bagAddonVisible = self:_IsAnyBagAddonVisible()
+            if bagAddonVisible then
+                -- Refresh navigation to clear stale nodes from deleted/sold items
+                self:RefreshNavigation()
+            else
+                -- Standard rebuild for non-addon bags
+                RequestGraphRebuild()
+            end
         end
     end)
     
@@ -1149,6 +1206,57 @@ function Hijack:_SetupNavigationHandlers(widgets)
         end)
     end
     
+end
+
+---Refresh navigation by rebuilding graph and restoring focus to a valid node
+---Used when bag addon content changes (items deleted/sold) to clear stale nodes
+---Safely rebuilds graph while preserving user's focus position if possible
+---@return boolean success True if refresh succeeded
+---@public
+function Hijack:RefreshNavigation()
+    if InCombatLockdown() then
+        return false
+    end
+    
+    if not self.IsActive then
+        return false
+    end
+    
+    -- Save current node for restoration attempt (may be stale)
+    local previousNode = self.CurrentNode
+    
+    -- Invalidate graph immediately to prevent stale node access
+    if NavGraph then
+        NavGraph:InvalidateGraph()
+    end
+    
+    -- Temporarily disable to clear state
+    self:DisableNavigation()
+    
+    -- Small delay to ensure frames have updated (bag slots removed/added)
+    C_Timer.After(0.1, function()
+        if InCombatLockdown() then
+            return
+        end
+        
+        -- Re-enable navigation (rebuilds graph)
+        local success = self:EnableNavigation()
+        
+        if success and previousNode then
+            -- Try to restore focus to previous node if it's still valid
+            if previousNode:IsVisible() then
+                local restoredIndex = NavGraph:NodeToIndex(previousNode)
+                if restoredIndex then
+                    -- Previous node still exists in new graph - restore focus
+                    self:SetFocus(previousNode)
+                    return
+                end
+            end
+            -- Previous node no longer valid - focus is already set to first node by EnableNavigation
+        end
+    end)
+    
+    return true
 end
 
 ---Enable UI navigation by building graph and setting up input handlers
