@@ -70,6 +70,7 @@ _Note: Project is 100% base feature complete. Currently, working on edge-case bu
 - Add some addon support:
    * ~~Immersion~~ (requires an external module to be built)
    * ~~Questie~~ (requires an external module to be built)
+   * [x] Auctionator
    * [x] Baganator
    * [x] Bagnon
 

@@ -86,6 +86,15 @@ local FRAMES = {
 -- Maps addon names to their navigable frame names
 -- Frames are added to FRAMES table dynamically when addon is detected
 local ADDON_FRAMES = {
+    Auctionator = {
+        "AuctionFrameBid",
+        "AuctionFrameAuctions",
+        "AuctionatorShoppingFrame",
+        "AuctionatorSellingFrame",
+        "AuctionatorSellingFrame.BagInset",
+        "AuctionatorCancellingFrame",
+        "AuctionatorConfigFrame",
+    },
     Bagnon = {
         "BagnonInventory1",
     },
@@ -104,7 +113,7 @@ local function RegisterAddonFrames(addonName)
         return
     end
     
-    CPAPI.DebugLog('Detected bag addon: %s', addonName)
+    CPAPI.DebugLog('Detected addon: %s', addonName)
     
     -- Add addon frames to FRAMES registry (avoid duplicates)
     for _, frameName in ipairs(ADDON_FRAMES[addonName]) do
