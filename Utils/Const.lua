@@ -20,6 +20,12 @@ CPAPI.ActionTypeRelease   = 'typerelease';
 CPAPI.ActionPressAndHold  = 'pressAndHoldAction';
 
 ---------------------------------------------------------------
+-- Scrolling
+---------------------------------------------------------------
+CPAPI.ScrollStep          = 20;   -- Pixels per scroll tick
+CPAPI.ScrollRepeatDelay   = 0.05; -- Seconds between scroll ticks when holding
+
+---------------------------------------------------------------
 -- For use with OnDataLoaded.
 ---------------------------------------------------------------
 CPAPI.BurnAfterReading    = random(0001, 1337); -- Mark as garbage.

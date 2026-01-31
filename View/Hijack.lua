@@ -13,6 +13,37 @@ local NavGraph = _G.CPLightNavigationGraph
 local CVarManager = nil  -- Initialized after Config module loads
 
 ---------------------------------------------------------------
+-- Gauntlet State Constants (Defined Early for Scope)
+---------------------------------------------------------------
+-- Gauntlet State Machine Constants
+local GAUNTLET_STATE = {
+    HIDDEN = 'hidden',
+    POINTING = 'pointing',
+    PRESSING = 'pressing',
+    SCROLLING = 'scrolling',
+}
+
+-- Valid State Transitions
+local VALID_TRANSITIONS = {
+    [GAUNTLET_STATE.HIDDEN] = {
+        [GAUNTLET_STATE.POINTING] = true,
+    },
+    [GAUNTLET_STATE.POINTING] = {
+        [GAUNTLET_STATE.PRESSING] = true,
+        [GAUNTLET_STATE.HIDDEN] = true,
+        [GAUNTLET_STATE.SCROLLING] = true,
+    },
+    [GAUNTLET_STATE.PRESSING] = {
+        [GAUNTLET_STATE.POINTING] = true,
+        [GAUNTLET_STATE.HIDDEN] = true,
+    },
+    [GAUNTLET_STATE.SCROLLING] = {
+        [GAUNTLET_STATE.POINTING] = true,
+        [GAUNTLET_STATE.HIDDEN] = true,
+    },
+}
+
+---------------------------------------------------------------
 -- Graph State Tracking (Smart Invalidation)
 ---------------------------------------------------------------
 -- Track the state of the last successful graph build to enable reuse
@@ -344,6 +375,14 @@ end
 ---@param direction string The direction to navigate ("UP", "DOWN", "LEFT", "RIGHT")
 ---@public
 function Hijack:Navigate(direction)
+    -- Check if current node is a scroll control and direction is UP/DOWN
+    if self.CurrentNode and (direction == 'UP' or direction == 'DOWN') then
+        if self:IsScrollNode(self.CurrentNode) then
+            self:HandleScrollNavigation(direction)
+            return  -- Skip normal navigation
+        end
+    end
+    
     -- Validate navigation state
     local currentIndex = self:_ValidateNavigationState()
     if not currentIndex then
@@ -487,6 +526,15 @@ function Hijack:SetFocus(node)
     
     -- Update visual feedback
     self:_UpdateVisualFeedback(node)
+    
+    -- Update gauntlet state based on node type
+    if self:IsScrollNode(node) then
+        self:SetGauntletState(GAUNTLET_STATE.SCROLLING)
+    else
+        -- Not a scroll node - restore pointing state and stop any active scrolling
+        self:StopScrollRepeat()
+        self:SetGauntletState(GAUNTLET_STATE.POINTING)
+    end
 end
 
 ---------------------------------------------------------------
@@ -543,28 +591,6 @@ end
 ---------------------------------------------------------------
 -- Visual Gauntlet (Insecure - Cosmetic Only)
 ---------------------------------------------------------------
-
--- Gauntlet State Machine Constants
-local GAUNTLET_STATE = {
-    HIDDEN = 'hidden',
-    POINTING = 'pointing',
-    PRESSING = 'pressing',
-}
-
--- Valid State Transitions
-local VALID_TRANSITIONS = {
-    [GAUNTLET_STATE.HIDDEN] = {
-        [GAUNTLET_STATE.POINTING] = true,
-    },
-    [GAUNTLET_STATE.POINTING] = {
-        [GAUNTLET_STATE.PRESSING] = true,
-        [GAUNTLET_STATE.HIDDEN] = true,
-    },
-    [GAUNTLET_STATE.PRESSING] = {
-        [GAUNTLET_STATE.POINTING] = true,
-        [GAUNTLET_STATE.HIDDEN] = true,
-    },
-}
 
 function Hijack:CreateGauntlet()
     local gauntlet = CreateFrame("Frame", "CPLightGauntlet", UIParent)
@@ -629,6 +655,10 @@ function Hijack:SetGauntletState(newState)
         self.Gauntlet.tex:SetTexture("Interface\\CURSOR\\Interact")
         self.Gauntlet:SetSize(38, 38)
         self.Gauntlet:Show()
+    elseif newState == GAUNTLET_STATE.SCROLLING then
+        self.Gauntlet.tex:SetTexture("Interface\\AddOns\\CPLight\\Media\\XboxSeries\\XboxSeriesX_Dpad")
+        self.Gauntlet:SetSize(48, 48)
+        self.Gauntlet:Show()
     end
     
     -- Track current state
@@ -653,8 +683,157 @@ function Hijack:SetGauntletPressed(pressed)
     if pressed then
         self:SetGauntletState(GAUNTLET_STATE.PRESSING)
     else
-        self:SetGauntletState(GAUNTLET_STATE.POINTING)
+        -- Restore to appropriate state based on current node
+        if self.CurrentNode and self:IsScrollNode(self.CurrentNode) then
+            self:SetGauntletState(GAUNTLET_STATE.SCROLLING)
+        else
+            self:SetGauntletState(GAUNTLET_STATE.POINTING)
+        end
     end
+end
+
+---------------------------------------------------------------
+-- Scroll Node Detection
+---------------------------------------------------------------
+
+---Check if a node is a scroll control (slider thumb or scroll button)
+---Only returns true for actual scrollbar controls, not children of ScrollFrames
+---@param node Frame The node to check
+---@return boolean isScroll True if node is a scroll control
+---@private
+function Hijack:IsScrollNode(node)
+    if not node then
+        return false
+    end
+    
+    -- Direct check: Is this node itself a Slider? (scrollbar thumb)
+    if node.IsObjectType and node:IsObjectType('Slider') then
+        return true
+    end
+    
+    -- Check if this is a scroll button by name pattern
+    local nodeName = node:GetName()
+    if nodeName then
+        local lowerName = nodeName:lower()
+        
+        -- Pattern 1: Generic scroll button patterns (ScrollUpButton, ScrollDownButton, etc.)
+        if lowerName:match('scroll') and (lowerName:match('up') or lowerName:match('down')) then
+            return true
+        end
+        
+        -- Pattern 2: Generic up/down button patterns (UpButton, DownButton)
+        if lowerName:match('upbutton') or lowerName:match('downbutton') then
+            return true
+        end
+    end
+    
+    return false
+end
+
+---Find the scrollable parent of a node
+---@param node Frame The node to search from
+---@return Frame|nil scrollParent The ScrollFrame parent, or nil if not found
+---@private
+function Hijack:FindScrollParent(node)
+    if not node then
+        return nil
+    end
+    
+    local parent = node:GetParent()
+    local depth = 0
+    local maxDepth = 5  -- Prevent infinite loops
+    
+    while parent and depth < maxDepth do
+        if parent.IsObjectType and parent:IsObjectType('ScrollFrame') then
+            return parent
+        end
+        parent = parent:GetParent()
+        depth = depth + 1
+    end
+    
+    return nil
+end
+
+---------------------------------------------------------------
+-- Scroll Navigation
+---------------------------------------------------------------
+
+---Handle scroll navigation when gauntlet is on a scroll control
+---@param direction string The direction to scroll ("UP" or "DOWN")
+---@private
+function Hijack:HandleScrollNavigation(direction)
+    local scrollParent = self:FindScrollParent(self.CurrentNode)
+    if not scrollParent then
+        return
+    end
+    
+    -- Perform single scroll step
+    self:ScrollStep(scrollParent, direction)
+    
+    -- Start continuous scrolling if not already active
+    if not self.ScrollTicker then
+        self:StartScrollRepeat(scrollParent, direction)
+    end
+end
+
+---Perform a single scroll step
+---@param scrollParent Frame The ScrollFrame to scroll
+---@param direction string The direction to scroll ("UP" or "DOWN")
+---@private
+function Hijack:ScrollStep(scrollParent, direction)
+    if not scrollParent or not scrollParent:IsObjectType('ScrollFrame') then
+        return
+    end
+    
+    local current = scrollParent:GetVerticalScroll()
+    local range = scrollParent:GetVerticalScrollRange()
+    local step = CPAPI.ScrollStep or 20
+    
+    local newScroll
+    if direction == 'UP' then
+        newScroll = math.max(0, current - step)
+    else  -- DOWN
+        newScroll = math.min(range, current + step)
+    end
+    
+    scrollParent:SetVerticalScroll(newScroll)
+end
+
+---Start continuous scrolling with hold-to-repeat
+---@param scrollParent Frame The ScrollFrame to scroll
+---@param direction string The direction to scroll ("UP" or "DOWN")
+---@private
+function Hijack:StartScrollRepeat(scrollParent, direction)
+    -- Cancel any existing ticker
+    self:StopScrollRepeat()
+    
+    -- Store scroll context
+    self.ActiveScrollParent = scrollParent
+    self.ScrollDirection = direction
+    
+    -- Create ticker for continuous scrolling
+    local delay = CPAPI.ScrollRepeatDelay or 0.05
+    self.ScrollTicker = C_Timer.NewTicker(delay, function()
+        -- Validate scroll context is still valid
+        if not self.IsActive or not self.ActiveScrollParent or InCombatLockdown() then
+            self:StopScrollRepeat()
+            return
+        end
+        
+        -- Perform scroll step
+        self:ScrollStep(self.ActiveScrollParent, self.ScrollDirection)
+    end)
+end
+
+---Stop continuous scrolling
+---@public
+function Hijack:StopScrollRepeat()
+    if self.ScrollTicker then
+        self.ScrollTicker:Cancel()
+        self.ScrollTicker = nil
+    end
+    self.ActiveScrollParent = nil
+    self.ScrollDirection = nil
 end
 
 ---------------------------------------------------------------
@@ -1183,13 +1362,23 @@ function Hijack:_SetupNavigationHandlers(widgets)
     -- PreClick only fires on button DOWN, preventing double navigation on press+release
     if widgets.up then
         widgets.up:SetScript('PreClick', function(self, button, down)
-            if down then Hijack:Navigate('UP') end
+            if down then
+                Hijack:Navigate('UP')
+            else
+                -- Stop continuous scrolling on button release
+                Hijack:StopScrollRepeat()
+            end
         end)
     end
     
     if widgets.down then
         widgets.down:SetScript('PreClick', function(self, button, down)
-            if down then Hijack:Navigate('DOWN') end
+            if down then
+                Hijack:Navigate('DOWN')
+            else
+                -- Stop continuous scrolling on button release
+                Hijack:StopScrollRepeat()
+            end
         end)
     end
     
@@ -1261,7 +1450,7 @@ function Hijack:RefreshNavigation()
     self:DisableNavigation()
     
     -- Small delay to ensure frames have updated (bag slots removed/added)
-    C_Timer.After(0.1, function()
+    C_Timer.After(0.03, function()
         if InCombatLockdown() then
             return
         end
@@ -1418,6 +1607,9 @@ function Hijack:DisableNavigation()
     local nodeCount = NavGraph and NavGraph:GetNodeCount() or 0
     
     self.IsActive = false
+    
+    -- Stop any active scrolling
+    self:StopScrollRepeat()
     
     -- Release all input widgets
     if Driver and Driver.ReleaseAll then

@@ -187,13 +187,14 @@ function NavigationGraph:_CreateCacheItemForNode(cacheItem)
 	}
 end
 
----Find neighbor index using NODE library
+---Find neighbor index using axis-biased algorithm for sparse grids
+---Prioritizes candidates aligned with navigation axis (X for vertical, Y for horizontal)
 ---@param cacheItem table NODE cache item reference
 ---@param direction string Direction (UP, DOWN, LEFT, RIGHT)
 ---@return number|nil neighborIndex Index of neighbor, or nil
 function NavigationGraph:_FindNeighborIndex(cacheItem, direction)
 	local NODE = LibStub('ConsolePortNode')
-	if not NODE or not NODE.NavigateToBestCandidateV3 then
+	if not NODE then
 		return nil
 	end
 	
@@ -203,13 +204,57 @@ function NavigationGraph:_FindNeighborIndex(cacheItem, direction)
 		return nil
 	end
 	
-	local neighborCacheItem = NODE.NavigateToBestCandidateV3(currentCacheItem, direction)
+	-- Axis bias: Strongly prefer candidates aligned with navigation axis
+	local bestCandidate = nil
+	local bestScore = math.huge
+	local currentX, currentY = currentCacheItem.x, currentCacheItem.y
 	
-	if neighborCacheItem and type(neighborCacheItem) == 'table' and neighborCacheItem.node then
-		return graph.nodeToIndex[neighborCacheItem.node]
+	local isVertical = (direction == 'UP' or direction == 'DOWN')
+	
+	-- Scan all nodes in graph for candidates
+	for candidateIndex, candidateCacheItem in ipairs(graph.nodeCacheItems) do
+		-- Skip self
+		if candidateIndex ~= graph.nodeToIndex[cacheItem.node] then
+			local candidateX, candidateY = NODE.GetCenterScaled(candidateCacheItem.node)
+			
+			if candidateX and candidateY then
+				-- Calculate distances
+				local deltaX = math.abs(candidateX - currentX)
+				local deltaY = math.abs(candidateY - currentY)
+				
+				-- Direction filter: Only consider nodes in the correct direction
+				local isInDirection = false
+				if direction == 'UP' and candidateY > currentY then
+					isInDirection = true
+				elseif direction == 'DOWN' and candidateY < currentY then
+					isInDirection = true
+				elseif direction == 'LEFT' and candidateX < currentX then
+					isInDirection = true
+				elseif direction == 'RIGHT' and candidateX > currentX then
+					isInDirection = true
+				end
+				
+				if isInDirection then
+					-- Axis bias scoring:
+					-- For vertical movement: heavily weight horizontal alignment (small deltaX is good)
+					-- For horizontal movement: heavily weight vertical alignment (small deltaY is good)
+					local axisDelta = isVertical and deltaX or deltaY
+					local progressDelta = isVertical and deltaY or deltaX
+					
+					-- Score formula: axis alignment is 5x more important than distance
+					-- This ensures we prefer aligned nodes even if they're farther away
+					local score = (axisDelta * 5.0) + progressDelta
+					
+					if score < bestScore then
+						bestScore = score
+						bestCandidate = candidateIndex
+					end
+				end
+			end
+		end
 	end
 	
-	return nil
+	return bestCandidate
 end
 
 ---Build edges for a single node in all directions (lazy-calculated on demand)
