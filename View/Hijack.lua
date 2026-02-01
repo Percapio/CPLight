@@ -260,6 +260,11 @@ end
 ---------------------------------------------------------------
 
 ---------------------------------------------------------------
+-- Forward Declarations
+---------------------------------------------------------------
+local RequestGraphRebuild  -- Forward declaration for use in Navigation Core
+
+---------------------------------------------------------------
 -- Navigation Logic (Using Pre-Calculated Graph)
 ---------------------------------------------------------------
 
@@ -296,7 +301,7 @@ function Hijack:_ValidateNavigationState()
 end
 
 ---Get and validate the target node in the specified direction
----Uses validated edges with NODE fallback for dynamic accuracy
+---Uses pre-calculated validated edges only (no fallbacks)
 ---@param currentIndex number The current node index
 ---@param direction string The direction to navigate ("UP", "DOWN", "LEFT", "RIGHT")
 ---@return number|nil targetIndex The target node index, or nil if not found/invalid
@@ -311,63 +316,7 @@ function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
 	local dirKey = direction:lower()
 	local targetIndex = edges[dirKey]
 	
-	if targetIndex then
-		-- Found valid pre-calculated edge
-		return targetIndex
-	end
-	
-	-- FALLBACK: Pre-calculated edge is invalid, try NODE real-time navigation
-	local NODE = LibStub('ConsolePortNode')
-	if NODE and NODE.NavigateToBestCandidateV3 then
-		local currentNode = NavGraph:IndexToNode(currentIndex)
-		local graphData = NavGraph:GetGraph()
-		local currentCacheItem = graphData.nodeCacheItems[currentIndex]
-		
-		if currentNode and currentCacheItem then
-			-- Validate node is still accessible before calculating position
-			local nodeValid = pcall(function() return currentNode:IsVisible() end)
-			if not nodeValid then
-				-- Node is stale, invalidate graph
-				NavGraph:InvalidateGraph()
-				return nil
-			end
-			
-			-- Recalculate current position for accuracy
-			local x, y = NavGraph:GetNodePosition(currentIndex)
-			
-			if x and y then
-				local currentItem = {
-					node = currentNode,
-					super = currentCacheItem.super,
-					x = x,
-					y = y
-				}
-				
-				local targetItem = NODE.NavigateToBestCandidateV3(currentItem, direction:upper())
-				if targetItem and targetItem.node then
-					-- Try to find this node in our graph
-					local fallbackIndex = NavGraph:NodeToIndex(targetItem.node)
-					if fallbackIndex then
-						-- Found via fallback, but graph may need rebuild
-						return fallbackIndex
-					end
-				end
-				
-				-- Fallback found nothing or node not in graph - invalidate
-				NavGraph:InvalidateGraph()
-			end
-		end
-	end
-	
-	-- FINAL FALLBACK: Relaxed directional search
-	-- When strict edges and NODE navigation both fail, try relaxed search
-	-- This handles edge cases like MailFrame where tabs are arranged unusually
-	local relaxedIndex = NavGraph:FindNodeInRelaxedDirection(currentIndex, direction)
-	if relaxedIndex then
-		return relaxedIndex
-	end
-	
-	return nil
+	return targetIndex
 end
 
 ---Navigate to an adjacent node in the specified direction
@@ -848,7 +797,7 @@ end
 
 ---Request a graph rebuild with debouncing to prevent rebuild storms
 ---@private
-local function RequestGraphRebuild()
+RequestGraphRebuild = function()
     -- Early exit if rebuild already pending
     if Hijack.RebuildState.pending then
         return
