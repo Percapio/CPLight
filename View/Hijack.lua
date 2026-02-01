@@ -264,6 +264,35 @@ end
 ---------------------------------------------------------------
 local RequestGraphRebuild  -- Forward declaration for use in Navigation Core
 
+---Register OnShow/OnHide hooks for a single frame (centralized logic)
+---@param frame table Frame object to register hooks for
+---@param generation number Hook generation counter for stale hook prevention
+---@private
+local function _RegisterFrameHook(frame, generation)
+    if not frame or frame.CPLight_HooksRegistered then
+        return false
+    end
+    
+    -- Use HookScript to avoid overwriting existing handlers
+    frame:HookScript('OnShow', function()
+        -- Only execute if this is the current generation (prevents stale hooks)
+        if frame.CPLight_HookGeneration == generation and not InCombatLockdown() then
+            RequestGraphRebuild()
+        end
+    end)
+    
+    frame:HookScript('OnHide', function()
+        -- Only execute if this is the current generation (prevents stale hooks)
+        if frame.CPLight_HookGeneration == generation and not InCombatLockdown() then
+            RequestGraphRebuild()
+        end
+    end)
+    
+    frame.CPLight_HooksRegistered = true
+    frame.CPLight_HookGeneration = generation
+    return true
+end
+
 ---Navigate to an adjacent node in the specified direction using NODE library
 ---@param direction string The direction to navigate ("UP", "DOWN", "LEFT", "RIGHT")
 ---@public
@@ -377,7 +406,6 @@ function Hijack:_ConfigureWidgetsForNode(node)
         clickWidget:SetAttribute('clickbutton', node)
         clickWidget:Show()
         widgetsConfigured = widgetsConfigured + 1
-    else
     end
     
     -- Update PAD2 (right-click) widget
@@ -387,7 +415,6 @@ function Hijack:_ConfigureWidgetsForNode(node)
         rightWidget:SetAttribute('clickbutton', node)
         rightWidget:Show()
         widgetsConfigured = widgetsConfigured + 1
-    else
     end
     
     if widgetsConfigured == 0 then
@@ -421,18 +448,11 @@ function Hijack:SetFocus(node)
         return
     end
     
-    -- Get node index for logging
-    local nodeIndex = NavGraph and NavGraph:NodeToIndex(node)
-    if nodeIndex then
-    else
-    end
-    
     -- Update current node reference
     self.CurrentNode = node
     
     -- Configure secure widgets to target this node
-    if not self:_ConfigureWidgetsForNode(node) then
-    end
+    self:_ConfigureWidgetsForNode(node)
     
     -- Update visual feedback
     self:_UpdateVisualFeedback(node)
@@ -539,22 +559,52 @@ function Hijack:UpdateGauntletPosition(node)
     self.Gauntlet:Show()
 end
 
----Set the gauntlet visual state with transition validation and state tracking
+---Set the gauntlet visual state with transition validation and auto-correction
+---Invalid transitions are normalized through intermediary states
 ---@param newState string The target state ('hidden', 'pointing', or 'pressing')
-function Hijack:SetGauntletState(newState)
+---@param depth number Internal recursion depth counter (default 0)
+function Hijack:SetGauntletState(newState, depth)
     if not self.Gauntlet then return end
+    
+    -- Recursion depth guard to prevent stack overflow
+    depth = depth or 0
+    local MAX_RECURSION_DEPTH = 3
+    if depth >= MAX_RECURSION_DEPTH then
+        CPAPI.DebugLog('ERROR: SetGauntletState exceeded max recursion depth (%d)', MAX_RECURSION_DEPTH)
+        return
+    end
     
     local currentState = self.GauntletState or GAUNTLET_STATE.HIDDEN
     
-    -- Validate transition (log warning but allow for recovery)
-    if currentState ~= newState then
-        if not VALID_TRANSITIONS[currentState] or not VALID_TRANSITIONS[currentState][newState] then
-            CPAPI.DebugLog('WARNING: Invalid gauntlet transition: %s → %s', currentState, newState)
-            -- Allow transition anyway (fail-open for recovery)
+    -- If already in target state, nothing to do
+    if currentState == newState then
+        return
+    end
+    
+    -- Check if transition is valid
+    local isValidTransition = VALID_TRANSITIONS[currentState] and VALID_TRANSITIONS[currentState][newState]
+    
+    if not isValidTransition then
+        -- Find intermediary state to normalize transition
+        -- Most transitions go through POINTING as intermediary
+        local intermediaryState = GAUNTLET_STATE.POINTING
+        
+        -- Check if we can reach target through intermediary
+        if VALID_TRANSITIONS[currentState] and VALID_TRANSITIONS[currentState][intermediaryState] and
+           VALID_TRANSITIONS[intermediaryState] and VALID_TRANSITIONS[intermediaryState][newState] then
+            CPAPI.DebugLog('Auto-correcting invalid transition: %s → %s (via %s)', currentState, newState, intermediaryState)
+            -- Apply intermediary state without visual update (defer to final state)
+            self.GauntletState = intermediaryState
+            -- Then recursively apply target transition with visual update
+            self:SetGauntletState(newState, depth + 1)
+            return
+        else
+            -- No valid path found - force transition with warning
+            CPAPI.DebugLog('WARNING: No valid transition path: %s → %s (forcing)', currentState, newState)
         end
     end
     
-    -- Apply state
+    -- Apply visual state (only once at the end of transition chain)
     if newState == GAUNTLET_STATE.HIDDEN then
         self.Gauntlet:Hide()
     elseif newState == GAUNTLET_STATE.POINTING then
@@ -841,32 +891,17 @@ function Hijack:_RegisterVisibilityHooks()
         return
     end
     
+    -- Increment generation counter once for this batch
+    HookGeneration = HookGeneration + 1
+    local currentGeneration = HookGeneration
+    
     local hooksRegistered = 0
     for _, frameName in ipairs(FRAMES) do
         local frame = _G[frameName]
-        if frame and not frame.CPLight_HooksRegistered then
-            -- Increment generation counter for new hook registration batch
-            HookGeneration = HookGeneration + 1
-            local currentGeneration = HookGeneration
-            
-            -- Use HookScript to avoid overwriting existing handlers
-            frame:HookScript('OnShow', function()
-                -- Only execute if this is the current generation (prevents stale hooks)
-                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
-                    RequestGraphRebuild()
-                end
-            end)
-            
-            frame:HookScript('OnHide', function()
-                -- Only execute if this is the current generation (prevents stale hooks)
-                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
-                    RequestGraphRebuild()
-                end
-            end)
-            
-            frame.CPLight_HooksRegistered = true
-            frame.CPLight_HookGeneration = currentGeneration
-            hooksRegistered = hooksRegistered + 1
+        if frame then
+            if _RegisterFrameHook(frame, currentGeneration) then
+                hooksRegistered = hooksRegistered + 1
+            end
         end
     end
     
@@ -877,30 +912,14 @@ end
 ---Called when Blizzard addons load to catch frames that didn't exist at startup
 ---@private
 function Hijack:_UpdateFrameRegistry()
+    -- Increment generation counter once for this batch
+    HookGeneration = HookGeneration + 1
+    local currentGeneration = HookGeneration
+    
     for _, frameName in ipairs(FRAMES) do
         local frame = _G[frameName]
-        if frame and not frame.CPLight_HooksRegistered then
-            -- Increment generation counter for new hook registration batch
-            HookGeneration = HookGeneration + 1
-            local currentGeneration = HookGeneration
-            
-            -- Hook newly-available frame
-            frame:HookScript('OnShow', function()
-                -- Only execute if this is the current generation (prevents stale hooks)
-                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
-                    RequestGraphRebuild()
-                end
-            end)
-            
-            frame:HookScript('OnHide', function()
-                -- Only execute if this is the current generation (prevents stale hooks)
-                if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
-                    RequestGraphRebuild()
-                end
-            end)
-            
-            frame.CPLight_HooksRegistered = true
-            frame.CPLight_HookGeneration = currentGeneration
+        if frame then
+            _RegisterFrameHook(frame, currentGeneration)
         end
     end
 end
@@ -1033,7 +1052,7 @@ function Hijack:_CanReuseGraph(currentFrameNames)
     -- Force rebuild if graph is too old (prevents stale graphs)
     -- TO DISABLE: Comment out this block
     local GRAPH_STALE_THRESHOLD = 30  -- seconds
-    if self.LastGraphState.buildTime and GetTime then
+    if self.LastGraphState.buildTime then
         local graphAge = GetTime() - self.LastGraphState.buildTime
         if graphAge > GRAPH_STALE_THRESHOLD then
             CPAPI.DebugLog('ERROR: Navigation enable failed: Graph is stale (age=%d seconds)', graphAge)
@@ -1055,33 +1074,27 @@ function Hijack:_CollectVisibleFrames()
     local activeFrames = {}
     local frameNames = {}
     
+    -- Increment generation counter once for this batch (lazy hooks)
+    local needsHookGeneration = false
+    for _, frameName in ipairs(FRAMES) do
+        local frame = _G[frameName]
+        if frame and not frame.CPLight_HooksRegistered then
+            needsHookGeneration = true
+            break
+        end
+    end
+    
+    if needsHookGeneration then
+        HookGeneration = HookGeneration + 1
+    end
+    local currentGeneration = HookGeneration
+    
     for _, frameName in ipairs(FRAMES) do
         local frame = _G[frameName]
         if frame then
             -- Lazy hook registration: hook frames that weren't available at startup
             -- Fixes race conditions with late-loaded addons and on-demand frames
-            if not frame.CPLight_HooksRegistered then
-                -- Increment generation counter for new hook registration batch
-                HookGeneration = HookGeneration + 1
-                local currentGeneration = HookGeneration
-                
-                frame:HookScript('OnShow', function()
-                    -- Only execute if this is the current generation (prevents stale hooks)
-                    if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
-                        RequestGraphRebuild()
-                    end
-                end)
-                
-                frame:HookScript('OnHide', function()
-                    -- Only execute if this is the current generation (prevents stale hooks)
-                    if frame.CPLight_HookGeneration == currentGeneration and not InCombatLockdown() then
-                        RequestGraphRebuild()
-                    end
-                end)
-                
-                frame.CPLight_HooksRegistered = true
-                frame.CPLight_HookGeneration = currentGeneration
-            end
+            _RegisterFrameHook(frame, currentGeneration)
             
             if frame:IsVisible() and frame:GetAlpha() > 0 then
                 table.insert(activeFrames, frame)
@@ -1118,11 +1131,7 @@ function Hijack:_BuildGraph(frames, frameNames)
     if frameNames and #frameNames > 0 then
         self.LastGraphState.frameNames = frameNames
         self.LastGraphState.nodeCount = nodeCount
-        
-        -- OPTIONAL: Save build timestamp (Bug 1 Enhancement #2)
-        if GetTime then
-            self.LastGraphState.buildTime = GetTime()
-        end
+        self.LastGraphState.buildTime = GetTime()
     end
     
     return true
@@ -1499,9 +1508,6 @@ function Hijack:DisableNavigation()
         return
     end
     
-    -- Get node count before invalidating graph
-    local nodeCount = NavGraph and NavGraph:GetNodeCount() or 0
-    
     self.IsActive = false
     
     -- Stop any active scrolling
@@ -1541,8 +1547,8 @@ function Hijack:DisableNavigation()
     -- Note: Graph is NOT invalidated here to enable reuse on next enable
     -- Graph will be invalidated only if:
     --   1. Frame set changes (detected in _CanReuseGraph)
-    --   2. Node becomes invalid during navigation (_GetTargetNodeInDirection)
-    --   3. Current node becomes invisible (VisibilityChecker)
+    --   2. Node becomes invalid during navigation
+    --   3. Visibility changes trigger OnShow/OnHide hooks
     
 end
 
