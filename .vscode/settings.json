@@ -22,9 +22,9 @@
         "UIParent",
         "_G",
         "SecureHandlerStateTemplate",
-        "RegisterStateDriver",
-        "WorldMapFrame",
-        "TradeFrame"
+        "Vector2D_GetLength",
+        "nop",
+        "CreateTexturePool"
     ],
     "Lua.diagnostics.globals": [
         "CPLight", "db", "CPAPI", "UIParent", "_G", "SecureHandlerStateTemplate"

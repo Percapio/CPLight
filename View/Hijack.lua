@@ -264,63 +264,7 @@ end
 ---------------------------------------------------------------
 local RequestGraphRebuild  -- Forward declaration for use in Navigation Core
 
----------------------------------------------------------------
--- Navigation Logic (Using Pre-Calculated Graph)
----------------------------------------------------------------
-
----Validate the current navigation state before attempting navigation
----@return number|nil currentIndex The current node index, or nil if invalid
----@private
-function Hijack:_ValidateNavigationState()
-    if InCombatLockdown() then
-        return nil
-    end
-    
-    if not self.CurrentNode then
-        return nil
-    end
-    
-    if not NavGraph then
-        return nil
-    end
-    
-    local currentIndex = NavGraph:NodeToIndex(self.CurrentNode)
-    if not currentIndex then
-        -- Try to recover by focusing on first node
-        local firstIndex = NavGraph:GetFirstNodeIndex()
-        if firstIndex then
-            local firstNode = NavGraph:IndexToNode(firstIndex)
-            if firstNode then
-                self:SetFocus(firstNode)
-            end
-        end
-        return nil
-    end
-    
-    return currentIndex
-end
-
----Get and validate the target node in the specified direction
----Uses pre-calculated validated edges only (no fallbacks)
----@param currentIndex number The current node index
----@param direction string The direction to navigate ("UP", "DOWN", "LEFT", "RIGHT")
----@return number|nil targetIndex The target node index, or nil if not found/invalid
----@private
-function Hijack:_GetTargetNodeInDirection(currentIndex, direction)
-	-- Get neighbor index from pre-calculated edges with real-time validation
-	local edges = NavGraph:GetValidatedNodeEdges(currentIndex)
-	if not edges then
-		return nil
-	end
-	
-	local dirKey = direction:lower()
-	local targetIndex = edges[dirKey]
-	
-	return targetIndex
-end
-
----Navigate to an adjacent node in the specified direction
----Uses pre-calculated graph edges with real-time validation fallback
+---Navigate to an adjacent node in the specified direction using NODE library
 ---@param direction string The direction to navigate ("UP", "DOWN", "LEFT", "RIGHT")
 ---@public
 function Hijack:Navigate(direction)
@@ -332,36 +276,53 @@ function Hijack:Navigate(direction)
         end
     end
     
-    -- Validate navigation state
-    local currentIndex = self:_ValidateNavigationState()
+    -- Validate we have a current node
+    if not self.CurrentNode then
+        return
+    end
+    
+    -- Get current node's cache item from graph
+    if not NavGraph then
+        return
+    end
+    
+    local currentIndex = NavGraph:NodeToIndex(self.CurrentNode)
     if not currentIndex then
-        -- Current node is invalid - try to recover by requesting rebuild
-        if self.IsActive and NavGraph then
-            -- Request rebuild instead of trying to recover from stale graph
+        -- Current node not in graph - invalidate and rebuild
+        if self.IsActive then
             NavGraph:InvalidateGraph()
             RequestGraphRebuild()
         end
         return
     end
     
-    -- Get target node in direction
-    local targetIndex = self:_GetTargetNodeInDirection(currentIndex, direction)
-    if not targetIndex then
+    local currentCacheItem = NavGraph:GetCacheItem(currentIndex)
+    if not currentCacheItem then
+        return
+    end
+    
+    -- Use NODE library to navigate to best candidate
+    local nextCacheItem = NavGraph:NavigateInDirection(currentCacheItem, direction)
+    
+    if not nextCacheItem or not nextCacheItem.node then
+        return
+    end
+    
+    -- Re-validate graph wasn't invalidated during navigation (race condition fix)
+    if not NavGraph:IsValid() then
+        RequestGraphRebuild()
         return
     end
     
     -- Validate target node before focusing
-    local targetNode = NavGraph:IndexToNode(targetIndex)
-    if targetNode then
-        -- Extra validation: ensure node is still accessible
-        local nodeValid = pcall(function() return targetNode:IsVisible() end)
-        if nodeValid then
-            self:SetFocus(targetNode)
-        else
-            -- Target node is stale, invalidate graph
-            NavGraph:InvalidateGraph()
-            RequestGraphRebuild()
-        end
+    local targetNode = nextCacheItem.node
+    local nodeValid = pcall(function() return targetNode:IsVisible() end)
+    if nodeValid and targetNode:IsVisible() then
+        self:SetFocus(targetNode)
+    else
+        -- Target node is stale, invalidate graph
+        NavGraph:InvalidateGraph()
+        RequestGraphRebuild()
     end
 end
 
@@ -746,6 +707,15 @@ function Hijack:ScrollStep(scrollParent, direction)
     end
     
     scrollParent:SetVerticalScroll(newScroll)
+    
+    -- Invalidate graph when scroll position changes significantly
+    -- This ensures we rebuild cache with newly visible nodes
+    if math.abs(newScroll - current) > 0 then
+        -- Debounce: only invalidate if we're actively scrolling
+        if self.ScrollTicker and NavGraph then
+            NavGraph:InvalidateGraph()
+        end
+    end
 end
 
 ---Start continuous scrolling with hold-to-repeat
@@ -774,12 +744,17 @@ function Hijack:StartScrollRepeat(scrollParent, direction)
     end)
 end
 
----Stop continuous scrolling
+---Stop continuous scrolling and rebuild graph
 ---@public
 function Hijack:StopScrollRepeat()
     if self.ScrollTicker then
         self.ScrollTicker:Cancel()
         self.ScrollTicker = nil
+        
+        -- Rebuild graph after scrolling stops to refresh with newly visible nodes
+        if self.IsActive and NavGraph and not NavGraph:IsValid() then
+            RequestGraphRebuild()
+        end
     end
     self.ActiveScrollParent = nil
     self.ScrollDirection = nil
@@ -1005,30 +980,6 @@ function Hijack:_CheckInitialVisibility()
 end
 
 ---------------------------------------------------------------
--- Fallback Polling (Safety Net)
----------------------------------------------------------------
--- Slow polling at 1-second intervals to catch edge cases where events don't fire
--- local VisibilityChecker = CreateFrame("Frame")
--- VisibilityChecker.timer = 0
--- VisibilityChecker:SetScript("OnUpdate", function(self, elapsed)
---     -- Skip checks during combat
---     if InCombatLockdown() then return end
-    
---     -- Only check every 1 second (fallback, not primary mechanism)
---     self.timer = self.timer + elapsed
---     if self.timer < 1.0 then return end
---     self.timer = 0
-    
---     -- Check for stale node (current node became invisible)
---     if Hijack.IsActive and Hijack.CurrentNode then
---         if not Hijack.CurrentNode:IsVisible() then
---             NavGraph:InvalidateGraph()
---             RequestGraphRebuild()
---         end
---     end
--- end)
-
----------------------------------------------------------------
 -- SECTION 4: Widget & Binding Management
 ---------------------------------------------------------------
 
@@ -1142,33 +1093,26 @@ function Hijack:_CollectVisibleFrames()
     return activeFrames, frameNames
 end
 
----Build navigation graph and export it to the secure Driver frame
+---Build navigation graph from visible frames
 ---@param frames table List of frame objects to build graph from
 ---@param frameNames table List of frame names corresponding to frame objects
----@return boolean success True if graph was built and exported successfully
+---@return boolean success True if graph was built successfully
 ---@private
-function Hijack:_BuildAndExportGraph(frames, frameNames)
-    if not NavGraph then
-        return false
-    end
-    
-    -- Build graph using NavigationGraph module
-    local success = NavGraph:BuildGraph(frames)
-    if not success then
-        return false
-    end
-    
-    local nodeCount = NavGraph:GetNodeCount()
-    if not nodeCount or nodeCount == 0 then
-        return false
-    end
-    
-    
-    -- Export graph to secure Driver frame
-    if not NavGraph:ExportToSecureFrame(Driver) then
-        return false
-    end
-    
+function Hijack:_BuildGraph(frames, frameNames)
+	if not NavGraph then
+		return false
+	end
+	
+	-- Build graph using NavigationGraph module
+	local success = NavGraph:BuildGraph(frames)
+	if not success then
+		return false
+	end
+	
+	local nodeCount = NavGraph:GetNodeCount()
+	if not nodeCount or nodeCount == 0 then
+		return false
+	end
     
     -- Save state for future reuse checks
     if frameNames and #frameNames > 0 then
@@ -1210,6 +1154,9 @@ function Hijack:_RollbackEnableState()
         for id, widget in pairs(Driver.Widgets) do
             if widget then
                 ClearOverrideBindings(widget)
+                -- Clear PreClick/PostClick handlers to prevent partial setup
+                widget:SetScript('PreClick', nil)
+                widget:SetScript('PostClick', nil)
             end
         end
     end
@@ -1461,14 +1408,14 @@ function Hijack:EnableNavigation()
     
     -- BUG 2 FIX: Transaction-style setup with automatic rollback on failure
     local success, errorMsg = pcall(function()
-        -- Step 1: Build/export graph if needed
-        local canReuseGraph = self:_CanReuseGraph(frameNames)
-        
-        if not canReuseGraph then
-            local graphBuilt = self:_BuildAndExportGraph(activeFrames, frameNames)
-            if not graphBuilt then
-                error("Failed to build navigation graph")
-            end
+		-- Step 1: Build graph if needed
+		local canReuseGraph = self:_CanReuseGraph(frameNames)
+		
+		if not canReuseGraph then
+			local graphBuilt = self:_BuildGraph(activeFrames, frameNames)
+			if not graphBuilt then
+				error("Graph build failed")
+			end
             
             -- OPTIONAL: Track cache miss (Bug 1 Enhancement #1)
             if self.GraphCacheStats then
@@ -1724,25 +1671,4 @@ function Hijack:OnDisable()
     self.RebuildState.hooksRegistered = false
 end
 
----------------------------------------------------------------
--- OPTIONAL ENHANCEMENT #1: Cache Statistics API (Bug 1 Improvement)
----------------------------------------------------------------
--- Get graph cache performance metrics
--- TO DISABLE: Comment out this entire function
--- function Hijack:GetGraphCacheStats()
---     if not self.GraphCacheStats then
---         return nil
---     end
-    
---     local total = self.GraphCacheStats.hits + self.GraphCacheStats.misses
---     local hitRate = total > 0 and (self.GraphCacheStats.hits / total * 100) or 0
---     CPAPI.Log('Cache Stats: Hits=%d, Misses=%d, HitRate=%.1f%%', self.GraphCacheStats.hits, self.GraphCacheStats.misses, hitRate)
 
---     return {
---         hits = self.GraphCacheStats.hits,
---         misses = self.GraphCacheStats.misses,
---         total = total,
---         hitRate = string.format("%.1f%%", hitRate),
---     }
--- end
----------------------------------------------------------------
