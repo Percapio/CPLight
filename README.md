@@ -67,6 +67,7 @@ _Note: Project is 100% base feature complete. Currently, working on edge-case bu
 - [x] Ensure both primary features (movement and menu navigation) is 100% bug-free
 - [x] Add an action-bar button mapping menu (only button mapping, not the full ConsolePort package)
 - [x] keybindings show x-box controller buttons when mapped (good enough.  not sure how to map to action bars without high overhead costs)
+- [x] Y button (PAD4) features: delete, split stack, equip ring/trinket
 - Add some addon support:
    * ~~Immersion~~ (requires an external module to be built)
    * ~~Questie~~ (requires an external module to be built)

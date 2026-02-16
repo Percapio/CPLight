@@ -194,6 +194,12 @@ Driver:SetAttribute('_onstate-combat', [[
     if newstate then
         -- Combat started: disable all input widgets
         control:ChildUpdate('combat', true)
+        if message then
+            self:SetAttribute('clickbutton', nil)
+            self:Hide()
+            -- Add this line to auto-close the context menu in combat securely
+            if CPLightContextMenu then CPLightContextMenu:Hide() end 
+        end
     else
         -- Combat ended: allow navigation to re-enable
         control:ChildUpdate('combat', nil)
@@ -303,6 +309,11 @@ function Hijack:Navigate(direction)
             self:HandleScrollNavigation(direction)
             return  -- Skip normal navigation
         end
+    end
+
+    if self.IsContextMenuOpen then
+        self:_NavigateContextMenu(direction)
+        return
     end
     
     -- Validate we have a current node
@@ -448,6 +459,9 @@ function Hijack:SetFocus(node)
         return
     end
     
+    -- Clear highlight on previous node before switching
+    self:_ClearPreviousNodeHighlight()
+    
     -- Update current node reference
     self.CurrentNode = node
     
@@ -515,6 +529,26 @@ function Hijack:ShowTooltipForNode(node)
         GameTooltip:SetOwner(node, "ANCHOR_RIGHT")
         GameTooltip:SetText(node:GetName())
         GameTooltip:Show()
+    end
+end
+
+---Fire OnLeave on the previous node to clear its highlight state
+---Must be called BEFORE updating self.CurrentNode
+---@private
+function Hijack:_ClearPreviousNodeHighlight()
+    local prevNode = self.CurrentNode
+    if not prevNode then return end
+    
+    -- Validate node is still accessible
+    local nodeValid = pcall(function() return prevNode:IsVisible() end)
+    if not nodeValid then return end
+    
+    -- Fire OnLeave to clear highlight
+    if prevNode:HasScript("OnLeave") then
+        local onLeaveScript = prevNode:GetScript("OnLeave")
+        if onLeaveScript then
+            pcall(onLeaveScript, prevNode)
+        end
     end
 end
 
@@ -634,6 +668,9 @@ end
 ---Hide gauntlet (convenience helper)
 ---@public
 function Hijack:HideGauntlet()
+    if GameTooltip:IsShown() then
+        GameTooltip:Hide()
+    end
     self:SetGauntletState(GAUNTLET_STATE.HIDDEN)
 end
 
@@ -712,6 +749,278 @@ function Hijack:FindScrollParent(node)
     end
     
     return nil
+end
+
+---------------------------------------------------------------
+-- PAD4 Context Menu
+---------------------------------------------------------------
+
+function Hijack:CreateContextMenu()
+    local menu = CreateFrame("Frame", "CPLightContextMenu", UIParent, "BackdropTemplate")
+    menu:SetFrameStrata("FULLSCREEN_DIALOG")  -- Above TOOLTIP to overlay gauntlet
+    menu:SetFrameLevel(300)
+    menu:Hide()
+    menu:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true, tileSize = 16, edgeSize = 16,
+        insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    })
+    menu:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    
+    -- Escape closes the menu (insecure OnKeyDown)
+    menu:EnableKeyboard(true)
+    menu:SetScript("OnKeyDown", function(self, key)
+        if key == "ESCAPE" then
+            self:SetPropagateKeyboardInput(false)
+            Hijack:CloseContextMenu()
+        else
+            self:SetPropagateKeyboardInput(true)
+        end
+    end)
+    
+    menu.buttons = {}  -- Array of menu option buttons
+    self.ContextMenu = menu
+end
+
+function Hijack:_CreateMenuButton(parent, index)
+    local btn = CreateFrame("Button", "$parentButton"..index, parent, "SecureActionButtonTemplate")
+    btn:SetSize(160, 24)
+    btn:SetPoint("TOPLEFT", parent, "TOPLEFT", 8, -8 - ((index - 1) * 26))
+    
+    btn:SetNormalFontObject(GameFontNormal)
+    btn:SetHighlightFontObject(GameFontHighlight)
+    btn:SetText("")
+    
+    -- Highlight texture (for gauntlet navigation visual feedback)
+    local highlight = btn:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetColorTexture(0.3, 0.5, 0.8, 0.3)
+    
+    btn:Hide()
+    return btn
+end
+
+function Hijack:OpenContextMenu(node)
+    if InCombatLockdown() then return end
+    if not node then return end
+    if not self.ContextMenu then return end
+    
+    -- Identify the bag slot
+    local bag = node:GetParent() and node:GetParent():GetID()
+    local slot = node:GetID()
+    if not bag or not slot then return end
+    
+    -- Get item info using the modern Container API
+    local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
+    if not itemInfo or not itemInfo.hyperlink then return end 
+    
+    local itemID = itemInfo.itemID
+    local link = itemInfo.hyperlink
+    local count = itemInfo.stackCount
+    
+    -- Synchronous check for equip location
+    local _, _, _, itemEquipLoc = GetItemInfoInstant(itemID)
+    
+    -- Determine ring/trinket
+    local isRing = (itemEquipLoc == "INVTYPE_FINGER")
+    local isTrinket = (itemEquipLoc == "INVTYPE_TRINKET")
+    local isDualSlot = isRing or isTrinket
+    
+    -- Build option list
+    local options = {}
+    
+    -- Always available: Delete (Insecure)
+    table.insert(options, {
+        text = "Delete",
+        action = function() self:_ContextAction_Delete(bag, slot, link) end,
+    })
+    
+    -- Conditional: Split (Insecure)
+    if count and count > 1 then
+        table.insert(options, {
+            text = "Split Stack",
+            action = function() self:_ContextAction_Split(bag, slot, node, count) end,
+        })
+    end
+    
+    -- Conditional: Primary/Secondary slots for rings/trinkets (SECURE)
+    if isDualSlot then
+        local slotName1, slotName2
+        if isRing then
+            slotName1, slotName2 = "Finger0Slot", "Finger1Slot"
+        else
+            slotName1, slotName2 = "Trinket0Slot", "Trinket1Slot"
+        end
+        
+        local slotID1 = GetInventorySlotInfo(slotName1)
+        local slotID2 = GetInventorySlotInfo(slotName2)
+        local slotLabel = isRing and "Ring" or "Trinket"
+        
+        table.insert(options, {
+            text = "Equip — " .. slotLabel .. " 1",
+            isSecure = true,
+            macrotext = "/equipslot " .. slotID1 .. " item:" .. itemID
+        })
+        table.insert(options, {
+            text = "Equip — " .. slotLabel .. " 2",
+            isSecure = true,
+            macrotext = "/equipslot " .. slotID2 .. " item:" .. itemID
+        })
+    end
+    
+    -- Populate buttons
+    self:_PopulateContextMenu(options, node)
+end
+
+function Hijack:_PopulateContextMenu(options, anchorNode)
+    local menu = self.ContextMenu
+    if not menu then return end
+    
+    -- Hide all buttons first
+    for _, btn in ipairs(menu.buttons) do
+        btn:Hide()
+        btn:SetScript("OnClick", nil)
+        btn:SetAttribute("type", nil)       -- CLEAR the secure type
+        btn:SetAttribute("macrotext", nil)  -- CLEAR the ghost macrotext
+    end
+    
+    -- Populate visible buttons
+    local visibleCount = math.min(#options, 4)
+    for i = 1, visibleCount do
+        local btn = menu.buttons[i]
+        local opt = options[i]
+        btn:SetText(opt.text)
+        btn:SetScript("OnClick", function()
+            Hijack:CloseContextMenu()
+            opt.action()
+        end)
+        btn:Show()
+    end
+    
+    -- Size the menu to fit visible options
+    local menuHeight = 16 + (visibleCount * 26)  -- 8px padding top+bottom, 26px per button
+    menu:SetSize(176, menuHeight)  -- 160px button + 8px padding each side
+    
+    -- Position at the gauntlet cursor
+    menu:ClearAllPoints()
+    local x, y = NODE.GetCenterScaled(anchorNode)
+    if x and y then
+        menu:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x + 16, y - 16)
+    else
+        menu:SetPoint("CENTER", UIParent, "CENTER")
+    end
+    
+    -- Store context for navigation
+    self.ContextMenuOptions = options
+    self.ContextMenuSelection = 1
+    self.ContextMenuAnchorNode = anchorNode
+    
+    -- Highlight first option
+    -- (The gauntlet D-pad navigation will be temporarily redirected to the menu)
+    
+    menu:Show()
+    self.IsContextMenuOpen = true
+end
+
+function Hijack:_NavigateContextMenu(direction)
+    if not self.ContextMenuOptions then return end
+    
+    local count = #self.ContextMenuOptions
+    if count == 0 then return end
+    
+    if direction == "UP" then
+        self.ContextMenuSelection = self.ContextMenuSelection - 1
+        if self.ContextMenuSelection < 1 then
+            self.ContextMenuSelection = count  -- Wrap around
+        end
+    elseif direction == "DOWN" then
+        self.ContextMenuSelection = self.ContextMenuSelection + 1
+        if self.ContextMenuSelection > count then
+            self.ContextMenuSelection = 1  -- Wrap around
+        end
+    else
+        -- LEFT or RIGHT: close the menu, return to bag navigation
+        self:CloseContextMenu()
+        return
+    end
+    
+    -- Update visual highlight (move gauntlet to the selected button)
+    local selectedBtn = self.ContextMenu.buttons[self.ContextMenuSelection]
+    if selectedBtn then
+        self:UpdateGauntletPosition(selectedBtn)
+        -- Update PAD1 click target to the selected menu button
+        local clickWidget = Driver:GetWidget('PAD1', 'Hijack')
+        if clickWidget and not InCombatLockdown() then
+            clickWidget:SetAttribute('clickbutton', selectedBtn)
+        end
+    end
+end
+
+function Hijack:_ContextAction_Delete(bag, slot, link)
+    if InCombatLockdown() then return end
+    
+    -- Use Blizzard's built-in delete flow
+    PickupContainerItem(bag, slot)
+    DeleteCursorItem()
+    -- Note: For quality >= Uncommon, Blizzard auto-shows DELETE_GOOD_ITEM popup
+    -- which requires typing "DELETE". This is safe — we don't bypass the confirmation.
+end
+
+function Hijack:_ContextAction_Split(bag, slot, node, count)
+    if InCombatLockdown() then return end
+    if not count or count <= 1 then return end
+    
+    -- Open Blizzard's stack split dialog anchored to the bag slot
+    OpenStackSplitFrame(count, node, "BOTTOMLEFT", "TOPLEFT")
+end
+
+function Hijack:CloseContextMenu()
+    if not self.ContextMenu then return end
+    
+    self.ContextMenu:Hide()
+    self.IsContextMenuOpen = false
+    self.ContextMenuOptions = nil
+    self.ContextMenuSelection = nil
+    
+    -- Clear cursor if an item is held (safety)
+    if CursorHasItem() then
+        ClearCursor()
+    end
+    
+    -- Restore PAD1 click target to the original bag slot node
+    if self.ContextMenuAnchorNode and not InCombatLockdown() then
+        local clickWidget = Driver:GetWidget('PAD1', 'Hijack')
+        if clickWidget then
+            clickWidget:SetAttribute('clickbutton', self.ContextMenuAnchorNode)
+        end
+        -- Re-position gauntlet back to the bag slot
+        self:UpdateGauntletPosition(self.ContextMenuAnchorNode)
+    end
+    
+    self.ContextMenuAnchorNode = nil
+end
+
+---@param node Frame The node to check
+---@return boolean isBagItem True if node is a standard bag item button
+---@return number|nil bag Bag ID (0-12)
+---@return number|nil slot Slot index
+function Hijack:_IsBagItemNode(node)
+    if not node then return false end
+    
+    local name = node:GetName()
+    if not name then return false end
+    
+    if not name:match("ContainerFrame%d+Item%d+") then
+        return false
+    end
+    
+    local bag = node:GetParent() and node:GetParent():GetID()
+    local slot = node:GetID()
+    
+    if not bag or not slot then return false end
+    
+    return true, bag, slot
 end
 
 ---------------------------------------------------------------
@@ -1178,6 +1487,9 @@ function Hijack:_RollbackEnableState()
     -- Ensure IsActive is false
     self.IsActive = false
     
+    -- Clear any lingering highlight
+    self:_ClearPreviousNodeHighlight()
+    
     -- Clear current node
     self.CurrentNode = nil
     
@@ -1227,6 +1539,11 @@ function Hijack:_SetupSecureWidgets()
     -- Set up PAD2 (right-click action)
     widgets.pad2 = trySetupWidget('PAD2', 'PAD2', 'RightButton')
     if not widgets.pad2 then
+        return nil
+    end
+
+    widgets.pad4 = trySetupWidget('PAD4', 'PAD4', 'LeftButton')
+    if not widgets.pad4 then
         return nil
     end
     
@@ -1299,6 +1616,17 @@ function Hijack:_SetupNavigationHandlers(widgets)
         end)
     end
     
+    -- Set up PAD4 for context menu (temporary insecure solution)
+    widgets.pad4:SetScript('PreClick', function()
+        if Hijack.IsActive and Hijack.CurrentNode and not InCombatLockdown() then
+            -- Only open if the gauntlet is hovering over a bag item
+            local isBagItem = Hijack:_IsBagItemNode(Hijack.CurrentNode)
+            if isBagItem then
+                Hijack:OpenContextMenu(Hijack.CurrentNode)
+            end
+        end
+    end)
+
     -- Set up visual feedback handlers for PAD1/PAD2 (only on down press)
     if widgets.pad1 then
         widgets.pad1:SetScript('PreClick', function(self, button, down)
@@ -1500,9 +1828,13 @@ end
 ---Graph is preserved for potential reuse on next enable
 ---@public
 function Hijack:DisableNavigation()
-    if InCombatLockdown() then
-        return
-    end
+    if InCombatLockdown() then return end
+    if not self.IsActive then return end
+    
+    -- NEW: Close context menu if open
+    self:CloseContextMenu()
+    
+    self.IsActive = false
     
     if not self.IsActive then
         return
@@ -1533,8 +1865,14 @@ function Hijack:DisableNavigation()
     -- Hide gauntlet with proper state transition
     self:HideGauntlet()
     
+    -- Clear highlight on current node before clearing reference
+    self:_ClearPreviousNodeHighlight()
+    
     -- Hide tooltip using centralized method with ownership validation
     self:HideTooltip()
+    if SettingsTooltip and SettingsTooltip:IsShown() then
+        SettingsTooltip:Hide()
+    end
     
     -- Extra ghost tooltip clear (ensures cleanup even if owner checks fail)
     if GameTooltip:IsShown() and GameTooltip:GetOwner() == self.CurrentNode then
@@ -1559,6 +1897,14 @@ end
 ---Handle combat start - disable navigation immediately
 function Driver:PLAYER_REGEN_DISABLED()
     -- Entering combat: disable navigation immediately
+    if Hijack.IsContextMenuOpen then
+        -- Clear cursor before combat lockdown prevents it
+        if CursorHasItem() then
+            ClearCursor()
+        end
+        Hijack:CloseContextMenu()
+    end
+
     if Hijack.IsActive then
         Hijack:DisableNavigation()
     end

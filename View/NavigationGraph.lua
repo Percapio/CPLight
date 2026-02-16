@@ -186,7 +186,15 @@ function NavigationGraph:NavigateInDirection(currentCacheItem, direction)
 	end
 	
 	-- Use NODE's V3 navigation (angle-based with multiple points per candidate)
-	local nextCacheItem, changed = NODE.NavigateToBestCandidateV3(currentCacheItem, direction)
+	-- pcall guard: ConsolePortNode's GetCandidatesForVectorV2 can crash with
+	-- "attempt to perform arithmetic on local 'x' (a nil value)" when a cached
+	-- node becomes stale (GetRect returns nil). Wrapping in pcall lets the caller
+	-- detect nil and trigger a graph rebuild instead of propagating the error.
+	local ok, nextCacheItem, changed = pcall(NODE.NavigateToBestCandidateV3, currentCacheItem, direction)
+	if not ok then
+		CPAPI.DebugLog('NODE navigation error (stale node): %s', tostring(nextCacheItem))
+		return nil
+	end
 	
 	return nextCacheItem
 end
